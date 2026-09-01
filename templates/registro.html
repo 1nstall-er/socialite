@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+
+{% block title %}Registro - Socialite{% endblock %}
+
+{% block content %}
+<h1>Crea tu cuenta</h1>
+<p>Registrate con tu correo institucional para unirte a tu universidad.</p>
+
+<form method="post" action="{{ url_for('registro') }}">
+  <p>
+    <label for="nombre">Nombre</label><br>
+    <input type="text" id="nombre" name="nombre" required>
+  </p>
+  <p>
+    <label for="correo">Correo institucional</label><br>
+    <input type="email" id="correo" name="correo" placeholder="uXXXXXXXX@upc.edu.pe" required>
+  </p>
+  <p>
+    <label for="carrera">Carrera</label><br>
+    <input type="text" id="carrera" name="carrera">
+  </p>
+  <p>
+    <label for="ciclo">Ciclo</label><br>
+    <input type="number" id="ciclo" name="ciclo" min="1" max="12">
+  </p>
+  <p>
+    <button type="submit">Registrarme</button>
+  </p>
+</form>
+
+<p><a href="{{ url_for('index') }}">Volver al inicio</a></p>
+{% endblock %}
