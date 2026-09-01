@@ -5,18 +5,42 @@
 {% block content %}
 <h1>Grupos disponibles</h1>
 
-{% if grupos %}
-<ul>
-  {% for grupo in grupos %}
-  <li>
-    <strong>{{ grupo.tipo }}</strong>
-    {% if grupo.lugar %} - {{ grupo.lugar }}{% endif %}
-  </li>
-  {% endfor %}
-</ul>
-{% else %}
-<p>Todavia no hay grupos. Se el primero en crear uno.</p>
-{% endif %}
+<section>
+  <h2>Crear un grupo</h2>
+  <form method="post" action="{{ url_for('grupos') }}">
+    <p>
+      <label for="tipo">Tipo</label><br>
+      <select id="tipo" name="tipo">
+        {% for t in tipos %}
+        <option value="{{ t }}">{{ t }}</option>
+        {% endfor %}
+      </select>
+    </p>
+    <p>
+      <label for="lugar">Lugar en el campus</label><br>
+      <input type="text" id="lugar" name="lugar" placeholder="Biblioteca, piso 3">
+    </p>
+    <p>
+      <button type="submit">Crear grupo</button>
+    </p>
+  </form>
+</section>
+
+<section>
+  <h2>Grupos activos</h2>
+  {% if grupos %}
+  <ul>
+    {% for grupo in grupos %}
+    <li>
+      <strong>{{ grupo.tipo }}</strong>
+      {% if grupo.lugar %} - {{ grupo.lugar }}{% endif %}
+    </li>
+    {% endfor %}
+  </ul>
+  {% else %}
+  <p>Todavia no hay grupos. Se el primero en crear uno.</p>
+  {% endif %}
+</section>
 
 <p><a href="{{ url_for('index') }}">Volver al inicio</a></p>
 {% endblock %}
