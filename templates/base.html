@@ -8,8 +8,21 @@
   <body>
     <header>
       <a href="{{ url_for('index') }}"><strong>Socialite</strong></a>
+      <nav>
+        <a href="{{ url_for('grupos') }}">Grupos</a>
+        <a href="{{ url_for('registro') }}">Registrarme</a>
+      </nav>
     </header>
     <main>
+      {% with mensajes = get_flashed_messages() %}
+        {% if mensajes %}
+        <ul class="mensajes">
+          {% for mensaje in mensajes %}
+          <li>{{ mensaje }}</li>
+          {% endfor %}
+        </ul>
+        {% endif %}
+      {% endwith %}
       {% block content %}{% endblock %}
     </main>
   </body>
