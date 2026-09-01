@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+
+{% block title %}Socialite - Encuentra tu grupo{% endblock %}
+
+{% block content %}
+<h1>Encuentra con quien estudiar en tu universidad</h1>
+<p>
+  Socialite te conecta con companeros de tu propia universidad para armar
+  grupos de estudio y hacer contactos, sin la presion de acercarte tu primero.
+  Todas las quedadas ocurren dentro del campus.
+</p>
+
+<section>
+  <h2>Que puedes hacer</h2>
+  <ul>
+    <li>Unirte a un grupo de estudio por curso y horario.</li>
+    <li>Crear tu propio grupo y dejar que la gente se sume.</li>
+    <li>Conocer gente con intereses parecidos, a tu ritmo.</li>
+  </ul>
+</section>
+
+<p>
+  <a href="{{ url_for('grupos') }}">Ver grupos disponibles</a>
+</p>
+{% endblock %}
