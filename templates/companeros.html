@@ -1,0 +1,39 @@
+{% extends "base.html" %}
+
+{% block title %}Companeros sugeridos - Socialite{% endblock %}
+
+{% block content %}
+<h1>Encuentra companeros de estudio</h1>
+<p>Elige tu perfil y te mostramos con quien tienes mas en comun (mismo curso y horarios que coinciden).</p>
+
+<form method="get" action="{{ url_for('companeros') }}">
+  <p>
+    <label for="usuario">Yo soy</label><br>
+    <select id="usuario" name="usuario">
+      {% for u in usuarios %}
+      <option value="{{ u.id }}" {% if seleccionado and seleccionado.id == u.id %}selected{% endif %}>{{ u.nombre }}</option>
+      {% endfor %}
+    </select>
+    <button type="submit">Ver sugerencias</button>
+  </p>
+</form>
+
+{% if seleccionado %}
+<h2>Sugerencias para {{ seleccionado.nombre }}</h2>
+{% if sugerencias %}
+<ol>
+  {% for s in sugerencias %}
+  <li>
+    <strong>{{ s.usuario.nombre }}</strong>
+    {% if s.usuario.carrera %} - {{ s.usuario.carrera }}{% endif %}
+    <span>(afinidad: {{ "%.1f"|format(s.score) }})</span>
+  </li>
+  {% endfor %}
+</ol>
+{% else %}
+<p>Todavia no hay otros usuarios para sugerir.</p>
+{% endif %}
+{% endif %}
+
+<p><a href="{{ url_for('index') }}">Volver al inicio</a></p>
+{% endblock %}
