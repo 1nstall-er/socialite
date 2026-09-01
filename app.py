@@ -1,8 +1,14 @@
 from flask import Flask, render_template, request, redirect, url_for, flash
 from models import db, Grupo, Usuario
 from auth import es_correo_institucional
+from matching import score, ordenar_candidatos
 
 TIPOS_GRUPO = ("estudio", "social")
+
+
+def bloques_horario(usuario):
+    """Conjunto de bloques (dia, inicio, fin) del horario de un usuario."""
+    return {(h.dia, h.hora_inicio, h.hora_fin) for h in usuario.horarios}
 
 
 def create_app():
@@ -37,6 +43,35 @@ def create_app():
 
         lista = Grupo.query.all()
         return render_template("grupos.html", grupos=lista, tipos=TIPOS_GRUPO)
+
+    @app.route("/companeros")
+    def companeros():
+        usuarios = Usuario.query.all()
+        usuario_id = request.args.get("usuario", type=int)
+
+        if not usuario_id:
+            return render_template(
+                "companeros.html", usuarios=usuarios, seleccionado=None, sugerencias=None
+            )
+
+        usuario = Usuario.query.get_or_404(usuario_id)
+        mis_cursos = {c.id for c in usuario.cursos}
+        mis_bloques = bloques_horario(usuario)
+
+        sugerencias = []
+        for otro in usuarios:
+            if otro.id == usuario.id:
+                continue
+            sus_cursos = {c.id for c in otro.cursos}
+            mismo_curso = len(mis_cursos & sus_cursos) > 0
+            horas = len(mis_bloques & bloques_horario(otro))
+            puntaje = score(mismo_curso, horas, 0)
+            sugerencias.append({"usuario": otro, "score": puntaje})
+
+        sugerencias = ordenar_candidatos(sugerencias)
+        return render_template(
+            "companeros.html", usuarios=usuarios, seleccionado=usuario, sugerencias=sugerencias
+        )
 
     @app.route("/registro", methods=["GET", "POST"])
     def registro():
