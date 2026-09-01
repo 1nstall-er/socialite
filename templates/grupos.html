@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+
+{% block title %}Grupos disponibles - Socialite{% endblock %}
+
+{% block content %}
+<h1>Grupos disponibles</h1>
+
+{% if grupos %}
+<ul>
+  {% for grupo in grupos %}
+  <li>
+    <strong>{{ grupo.tipo }}</strong>
+    {% if grupo.lugar %} - {{ grupo.lugar }}{% endif %}
+  </li>
+  {% endfor %}
+</ul>
+{% else %}
+<p>Todavia no hay grupos. Se el primero en crear uno.</p>
+{% endif %}
+
+<p><a href="{{ url_for('index') }}">Volver al inicio</a></p>
+{% endblock %}
