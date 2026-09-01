@@ -2,6 +2,8 @@ from flask import Flask, render_template, request, redirect, url_for, flash
 from models import db, Grupo, Usuario
 from auth import es_correo_institucional
 
+TIPOS_GRUPO = ("estudio", "social")
+
 
 def create_app():
     app = Flask(__name__)
@@ -17,10 +19,24 @@ def create_app():
     def index():
         return render_template("index.html")
 
-    @app.route("/grupos")
+    @app.route("/grupos", methods=["GET", "POST"])
     def grupos():
+        if request.method == "POST":
+            tipo = request.form.get("tipo", "").strip()
+            lugar = request.form.get("lugar", "").strip()
+
+            if tipo not in TIPOS_GRUPO:
+                flash("Elige un tipo de grupo valido.")
+                return redirect(url_for("grupos"))
+
+            grupo = Grupo(tipo=tipo, lugar=lugar or None)
+            db.session.add(grupo)
+            db.session.commit()
+            flash("Grupo creado.")
+            return redirect(url_for("grupos"))
+
         lista = Grupo.query.all()
-        return render_template("grupos.html", grupos=lista)
+        return render_template("grupos.html", grupos=lista, tipos=TIPOS_GRUPO)
 
     @app.route("/registro", methods=["GET", "POST"])
     def registro():
