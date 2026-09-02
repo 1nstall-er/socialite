@@ -20,6 +20,18 @@ companeros y creen grupos dentro del campus. El MVP esta enfocado en la UPC.
 - SQLite en desarrollo
 - HTML y CSS sin dependencias de frontend
 
+## Arquitectura de backend
+
+- `app.py`: rutas, validacion, autorizacion y contratos de respuesta.
+- `matching.py`: algoritmo puro de afinidad y solapamiento de horarios.
+- `queries.py`: consultas con carga anticipada para evitar N+1.
+- `presenters.py`: contratos serializables para Jinja2 y JSON.
+- `models.py`: entidades y relaciones persistentes.
+
+Los contratos que debe consumir el frontend estan documentados en
+`docs/JINJA_CONTEXT.md`. Las rutas nuevas sin template responden JSON hasta que
+se agregue la plantilla correspondiente, sin cambiar el contrato.
+
 ## Ejecutar en local
 
 ```powershell

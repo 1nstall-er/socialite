@@ -32,6 +32,18 @@ class Usuario(db.Model):
     ciclo = db.Column(db.Integer)
     intereses = db.Column(db.String(300))
     cursos = db.relationship("Curso", secondary=inscripciones, back_populates="usuarios")
+    solicitudes_enviadas = db.relationship(
+        "Conexion",
+        foreign_keys="Conexion.remitente_id",
+        back_populates="remitente",
+        cascade="all, delete-orphan",
+    )
+    solicitudes_recibidas = db.relationship(
+        "Conexion",
+        foreign_keys="Conexion.destinatario_id",
+        back_populates="destinatario",
+        cascade="all, delete-orphan",
+    )
 
     def set_password(self, password):
         self.password_hash = generate_password_hash(password)
@@ -42,6 +54,21 @@ class Usuario(db.Model):
     @property
     def lista_intereses(self):
         return [item.strip() for item in (self.intereses or "").split(",") if item.strip()]
+
+    @property
+    def iniciales(self):
+        partes = self.nombre.strip().split()
+        return "".join(parte[0] for parte in partes[:2]).upper()
+
+    @property
+    def perfil_completo(self):
+        secciones = (
+            bool(self.carrera and self.ciclo),
+            bool(self.lista_intereses),
+            bool(self.cursos),
+            bool(self.horarios),
+        )
+        return round(sum(secciones) / len(secciones) * 100)
 
 
 class Curso(db.Model):
@@ -91,3 +118,46 @@ class Grupo(db.Model):
     @property
     def esta_lleno(self):
         return len(self.miembros) >= self.max_miembros
+
+    @property
+    def cupos_disponibles(self):
+        return max(self.max_miembros - len(self.miembros), 0)
+
+
+class Conexion(db.Model):
+    __tablename__ = "conexiones"
+    __table_args__ = (
+        db.UniqueConstraint("remitente_id", "destinatario_id", name="uq_conexion_directa"),
+        db.CheckConstraint("remitente_id != destinatario_id", name="ck_conexion_usuarios_distintos"),
+    )
+
+    id = db.Column(db.Integer, primary_key=True)
+    remitente_id = db.Column(
+        db.Integer, db.ForeignKey("usuarios.id"), nullable=False, index=True
+    )
+    destinatario_id = db.Column(
+        db.Integer, db.ForeignKey("usuarios.id"), nullable=False, index=True
+    )
+    estado = db.Column(db.String(20), nullable=False, default="pendiente", index=True)
+    creada_en = db.Column(
+        db.DateTime(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc)
+    )
+    actualizada_en = db.Column(
+        db.DateTime(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+    )
+
+    remitente = db.relationship(
+        "Usuario", foreign_keys=[remitente_id], back_populates="solicitudes_enviadas"
+    )
+    destinatario = db.relationship(
+        "Usuario", foreign_keys=[destinatario_id], back_populates="solicitudes_recibidas"
+    )
+
+    def involucra(self, usuario):
+        return usuario.id in (self.remitente_id, self.destinatario_id)
+
+    def otra_persona(self, usuario):
+        return self.destinatario if self.remitente_id == usuario.id else self.remitente
