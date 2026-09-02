@@ -89,7 +89,7 @@
           </dl>
           <div class="miembros" aria-label="Miembros del grupo">
             {% for miembro in grupo.miembros[:4] %}
-              <span title="{{ miembro.nombre }}">{{ miembro.nombre[:2]|upper }}</span>
+              <span class="{% if miembro.foto_url %}avatar-con-foto{% endif %}" title="{{ miembro.nombre }}">{% if miembro.foto_url %}<img src="{{ miembro.foto_url }}" alt="" loading="lazy">{% else %}{{ miembro.iniciales }}{% endif %}</span>
             {% endfor %}
             {% if grupo.miembros|length > 4 %}<b>+{{ grupo.miembros|length - 4 }}</b>{% endif %}
           </div>

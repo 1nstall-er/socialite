@@ -1,5 +1,9 @@
 import unittest
+from io import BytesIO
+from pathlib import Path
+from tempfile import TemporaryDirectory
 
+from PIL import Image
 from sqlalchemy import event
 
 from app import create_app
@@ -29,12 +33,14 @@ from models import (
 
 class SocialiteTestCase(unittest.TestCase):
     def setUp(self):
+        self.directorio_temporal = TemporaryDirectory()
         self.app = create_app(
             {
                 "TESTING": True,
                 "SECRET_KEY": "test-secret",
                 "SQLALCHEMY_DATABASE_URI": "sqlite:///:memory:",
                 "CSRF_ENABLED": False,
+                "AVATAR_UPLOAD_FOLDER": self.directorio_temporal.name,
             }
         )
         self.client = self.app.test_client()
@@ -43,6 +49,14 @@ class SocialiteTestCase(unittest.TestCase):
         with self.app.app_context():
             db.session.remove()
             db.drop_all()
+        self.directorio_temporal.cleanup()
+
+    @staticmethod
+    def foto_prueba(color=(31, 107, 79), formato="PNG"):
+        contenido = BytesIO()
+        Image.new("RGB", (420, 300), color).save(contenido, formato)
+        contenido.seek(0)
+        return contenido, f"perfil.{formato.lower()}"
 
     def registrar(self, nombre="Ana", correo="ana@upc.edu.pe", password="segura1234"):
         return self.client.post(
@@ -51,6 +65,7 @@ class SocialiteTestCase(unittest.TestCase):
                 "nombre": nombre,
                 "correo": correo,
                 "password": password,
+                "foto": self.foto_prueba(),
                 "carrera": "Ingenieria de Software",
                 "ciclo": "5",
             },
@@ -86,6 +101,7 @@ class SocialiteTestCase(unittest.TestCase):
                 "nombre": "Ana",
                 "correo": "ana@upc.edu.pe",
                 "password": "segura1234",
+                "foto": self.foto_prueba(),
                 "carrera_upc_id": str(software_id),
                 "ciclo": "5",
                 "intereses": ["programacion", "musica", "futbol"],
@@ -96,8 +112,75 @@ class SocialiteTestCase(unittest.TestCase):
         with self.app.app_context():
             usuario = Usuario.query.one()
             self.assertEqual(usuario.carrera, "Ingeniería de Software")
+            self.assertTrue(usuario.foto_archivo.endswith(".jpg"))
             self.assertEqual(
                 usuario.lista_intereses, ["Programación", "Música", "Fútbol"]
+            )
+
+    def test_registro_exige_foto_valida_y_la_normaliza(self):
+        sin_foto = self.client.post(
+            "/registro",
+            data={
+                "nombre": "Ana",
+                "correo": "ana@upc.edu.pe",
+                "password": "segura1234",
+            },
+            follow_redirects=True,
+        )
+        self.assertIn("Selecciona una foto de perfil", sin_foto.get_data(as_text=True))
+
+        falsa = self.client.post(
+            "/registro",
+            data={
+                "nombre": "Ana",
+                "correo": "ana@upc.edu.pe",
+                "password": "segura1234",
+                "foto": (BytesIO(b"esto no es una imagen"), "foto.jpg"),
+            },
+            follow_redirects=True,
+        )
+        self.assertIn("imagen válida", falsa.get_data(as_text=True))
+
+        respuesta = self.registrar()
+        self.assertIn("Mi perfil", respuesta.get_data(as_text=True))
+        with self.app.app_context():
+            usuario = Usuario.query.one()
+            ruta = Path(self.directorio_temporal.name) / usuario.foto_archivo
+            self.assertTrue(ruta.is_file())
+            with Image.open(ruta) as avatar:
+                self.assertEqual(avatar.format, "JPEG")
+                self.assertEqual(avatar.size, (640, 640))
+
+        with self.client.get(usuario.foto_url) as media:
+            self.assertEqual(media.status_code, 200)
+            self.assertEqual(media.mimetype, "image/jpeg")
+
+    def test_perfil_reemplaza_foto_y_elimina_version_anterior(self):
+        self.registrar()
+        with self.app.app_context():
+            anterior = Usuario.query.one().foto_archivo
+
+        respuesta = self.client.post(
+            "/perfil",
+            data={
+                "nombre": "Ana Actualizada",
+                "biografia": "Me gustan los proyectos interdisciplinarios.",
+                "carrera": "Ingenieria de Software",
+                "ciclo": "6",
+                "foto": self.foto_prueba(color=(215, 237, 134), formato="JPEG"),
+            },
+            follow_redirects=True,
+        )
+        self.assertIn("Perfil actualizado", respuesta.get_data(as_text=True))
+        with self.app.app_context():
+            usuario = Usuario.query.one()
+            self.assertNotEqual(usuario.foto_archivo, anterior)
+            self.assertEqual(
+                usuario.biografia, "Me gustan los proyectos interdisciplinarios."
+            )
+            self.assertFalse((Path(self.directorio_temporal.name) / anterior).exists())
+            self.assertTrue(
+                (Path(self.directorio_temporal.name) / usuario.foto_archivo).exists()
             )
 
     def test_formularios_rechazan_envios_sin_token_csrf(self):
@@ -220,6 +303,8 @@ class SocialiteTestCase(unittest.TestCase):
         self.assertIn("fotografia", pagina)
         self.assertIn("Probabilidad estimada", pagina)
         self.assertIn("Ver desglose matemático", pagina)
+        self.assertIn("Quiero conectar", pagina)
+        self.assertIn("Aplicar filtros", pagina)
 
     def test_matching_fusiona_bloques_y_no_duplica_minutos(self):
         propios = [
@@ -329,6 +414,10 @@ class SocialiteTestCase(unittest.TestCase):
             respuesta.get_json()["persona"]["correo_institucional"],
             "bruno@upc.edu.pe",
         )
+        conexiones = self.client.get("/conexiones")
+        self.assertEqual(conexiones.status_code, 200)
+        self.assertIn("Mis contactos", conexiones.get_data(as_text=True))
+        self.assertIn("bruno@upc.edu.pe", conexiones.get_data(as_text=True))
 
     def test_respuestas_incluyen_cabeceras_de_seguridad(self):
         respuesta = self.client.get("/")

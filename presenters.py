@@ -161,6 +161,8 @@ def usuario_contexto(
         "id": usuario.id,
         "nombre": usuario.nombre,
         "iniciales": usuario.iniciales,
+        "foto_url": usuario.foto_url,
+        "biografia": usuario.biografia,
         "carrera": usuario.carrera,
         "ciclo": usuario.ciclo,
         "intereses": usuario.lista_intereses,

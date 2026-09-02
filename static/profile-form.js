@@ -102,8 +102,49 @@
     actualizarLimite();
   }
 
+  function iniciarFoto(formulario) {
+    var entrada = formulario.querySelector("[data-photo-input]");
+    var vista = formulario.querySelector("[data-photo-preview]");
+    if (!entrada || !vista) return;
+
+    var imagen = vista.querySelector("[data-photo-image]");
+    var fallback = vista.querySelector("[data-photo-fallback]");
+    entrada.addEventListener("change", function () {
+      var archivo = entrada.files && entrada.files[0];
+      if (!archivo || !imagen) return;
+      if (archivo.size > 5 * 1024 * 1024) {
+        entrada.setCustomValidity("La foto debe pesar como máximo 5 MB.");
+        entrada.reportValidity();
+        entrada.value = "";
+        return;
+      }
+      entrada.setCustomValidity("");
+      var lector = new FileReader();
+      lector.addEventListener("load", function () {
+        imagen.src = lector.result;
+        imagen.hidden = false;
+        if (fallback) fallback.hidden = true;
+        vista.classList.add("avatar-con-foto");
+      });
+      lector.readAsDataURL(archivo);
+    });
+  }
+
+  function iniciarContador(formulario) {
+    var entrada = formulario.querySelector("[data-character-input]");
+    var contador = formulario.querySelector("[data-character-count]");
+    if (!entrada || !contador) return;
+    function actualizar() {
+      contador.textContent = entrada.value.length + " / " + entrada.maxLength;
+    }
+    entrada.addEventListener("input", actualizar);
+    actualizar();
+  }
+
   document.querySelectorAll("[data-profile-form]").forEach(function (formulario) {
     iniciarCiclos(formulario);
     iniciarIntereses(formulario);
+    iniciarFoto(formulario);
+    iniciarContador(formulario);
   });
 })();

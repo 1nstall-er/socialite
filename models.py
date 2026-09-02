@@ -1,8 +1,8 @@
 """Modelos de dominio de Socialite con contexto verificable de la UPC.
 
-Las extensiones UPC viven en tablas nuevas. Esta decision mantiene compatible la
-base SQLite del MVP: ``create_all`` puede crear las tablas sin alterar columnas
-existentes ni perder perfiles creados por los usuarios.
+Las extensiones UPC viven principalmente en tablas nuevas. Los campos aditivos del
+usuario se migran de forma idempotente para mantener compatible la base SQLite del
+MVP sin perder perfiles creados.
 """
 
 from __future__ import annotations
@@ -16,6 +16,7 @@ from typing import Final, TypeVar
 from unicodedata import category, normalize
 
 from flask_sqlalchemy import SQLAlchemy
+from sqlalchemy import inspect, text
 from sqlalchemy.orm import validates
 from werkzeug.security import check_password_hash, generate_password_hash
 
@@ -548,6 +549,8 @@ class Usuario(db.Model):
     nombre = db.Column(db.String(80), nullable=False)
     correo_institucional = db.Column(db.String(120), unique=True, nullable=False, index=True)
     password_hash = db.Column(db.String(255), nullable=False)
+    foto_archivo = db.Column(db.String(160))
+    biografia = db.Column(db.String(220))
     carrera = db.Column(db.String(80))
     ciclo = db.Column(db.Integer)
     intereses = db.Column(db.String(300))
@@ -578,6 +581,23 @@ class Usuario(db.Model):
     def check_password(self, password: str) -> bool:
         return check_password_hash(self.password_hash, password)
 
+    @validates("biografia")
+    def validar_biografia(self, _clave: str, valor: str | None) -> str | None:
+        if valor is None:
+            return None
+        limpio = valor.strip()
+        if len(limpio) > 220:
+            raise ValueError("La presentación puede tener hasta 220 caracteres")
+        return limpio or None
+
+    @validates("foto_archivo")
+    def validar_foto_archivo(self, _clave: str, valor: str | None) -> str | None:
+        if valor is None:
+            return None
+        if not re.fullmatch(r"[A-Za-z0-9_-]{24,80}\.jpg", valor):
+            raise ValueError("El nombre interno del avatar no es válido")
+        return valor
+
     @property
     def lista_intereses(self) -> list[str]:
         return [item.strip() for item in (self.intereses or "").split(",") if item.strip()]
@@ -600,6 +620,12 @@ class Usuario(db.Model):
         return "".join(parte[0] for parte in partes[:2]).upper()
 
     @property
+    def foto_url(self) -> str | None:
+        if not self.foto_archivo:
+            return None
+        return f"/media/avatares/{self.foto_archivo}"
+
+    @property
     def creditos_extraacademicos_confirmados(self) -> int:
         return sum(item.creditos_confirmados for item in self.participaciones_upc)
 
@@ -613,11 +639,35 @@ class Usuario(db.Model):
     @property
     def perfil_completo(self) -> int:
         secciones = (
+            bool(self.foto_archivo), bool(self.biografia),
             bool(self.carrera and self.ciclo), bool(self.lista_intereses),
             bool(self.cursos), bool(self.horarios),
             bool(self.perfil_upc and self.perfil_upc.campus),
         )
         return round(sum(secciones) / len(secciones) * 100)
+
+
+def asegurar_columnas_usuario() -> None:
+    """Añade campos opcionales nuevos sin invalidar la SQLite local existente.
+
+    El proyecto aún no incorpora Alembic. Esta migración aditiva conserva los
+    perfiles del MVP y es idempotente; una instalación nueva ya trae las columnas
+    desde ``create_all``.
+    """
+    inspector = inspect(db.engine)
+    if "usuarios" not in inspector.get_table_names():
+        return
+    existentes = {columna["name"] for columna in inspector.get_columns("usuarios")}
+    definiciones = {
+        "foto_archivo": "VARCHAR(160)",
+        "biografia": "VARCHAR(220)",
+    }
+    for nombre, tipo_sql in definiciones.items():
+        if nombre not in existentes:
+            db.session.execute(
+                text(f'ALTER TABLE usuarios ADD COLUMN "{nombre}" {tipo_sql}')
+            )
+    db.session.commit()
 
 
 class Curso(db.Model):

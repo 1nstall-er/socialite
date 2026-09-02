@@ -10,7 +10,9 @@
     <p>Mientras más completo esté, mejores serán tus coincidencias.</p>
   </div>
   <div class="perfil-resumen">
-    <div class="avatar-grande">{{ g.usuario.nombre[:2]|upper }}</div>
+    <div class="avatar-grande{% if perfil.foto_url %} avatar-con-foto{% endif %}">
+      {% if perfil.foto_url %}<img src="{{ perfil.foto_url }}" alt="Foto de {{ perfil.nombre }}">{% else %}{{ perfil.iniciales }}{% endif %}
+    </div>
     <div>
       <strong>{{ perfil.perfil_completo }}%</strong>
       <span>perfil completo</span>
@@ -24,8 +26,21 @@
     <p class="texto-suave">Estos datos alimentan directamente tu porcentaje de compatibilidad.</p>
     {% set carrera_actual = perfil.perfil_upc.carrera.id if perfil.perfil_upc and perfil.perfil_upc.carrera else none %}
     {% set intereses_seleccionados = perfil.intereses_detalle|map(attribute='clave')|list %}
-    <form method="post" action="{{ url_for('perfil') }}" data-profile-form>
+    <form method="post" action="{{ url_for('perfil') }}" enctype="multipart/form-data" data-profile-form>
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <div class="campo campo-foto">
+        <div class="foto-editor">
+          <div class="avatar-preview{% if perfil.foto_url %} avatar-con-foto{% endif %}" data-photo-preview>
+            <span data-photo-fallback{% if perfil.foto_url %} hidden{% endif %}>{{ perfil.iniciales }}</span>
+            <img data-photo-image src="{{ perfil.foto_url or '' }}" alt="Vista previa de tu foto"{% if not perfil.foto_url %} hidden{% endif %}>
+          </div>
+          <div>
+            <label for="foto">Cambiar foto</label>
+            <input type="file" id="foto" name="foto" accept="image/jpeg,image/png,image/webp" data-photo-input>
+            <small>La ajustaremos a formato cuadrado sin conservar metadatos.</small>
+          </div>
+        </div>
+      </div>
       <div class="campo">
         <label for="nombre">Nombre</label>
         <input type="text" id="nombre" name="nombre" value="{{ g.usuario.nombre }}" required>
@@ -33,6 +48,13 @@
       <div class="campo">
         <label>Correo UPC</label>
         <input type="email" value="{{ g.usuario.correo_institucional }}" disabled>
+      </div>
+      <div class="campo">
+        <div class="campo-titulo-linea">
+          <label for="biografia">Presentación</label>
+          <span class="contador-caracteres" data-character-count>0 / 220</span>
+        </div>
+        <textarea id="biografia" name="biografia" maxlength="220" rows="3" placeholder="Cuéntales a otros estudiantes qué buscas en Socialite." data-character-input>{{ perfil.biografia or '' }}</textarea>
       </div>
       <div class="grid-dos">
         <div class="campo">

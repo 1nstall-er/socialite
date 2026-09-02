@@ -5,6 +5,7 @@ import time
 from datetime import timedelta
 from functools import wraps
 from hmac import compare_digest
+from pathlib import Path
 
 from flask import (
     Flask,
@@ -15,6 +16,7 @@ from flask import (
     redirect,
     render_template,
     request,
+    send_from_directory,
     session,
     url_for,
 )
@@ -28,6 +30,7 @@ from matching import (
     preparar_perfil,
     rankear_candidatos,
 )
+from media import eliminar_avatar, guardar_avatar
 from models import (
     CampusUPC,
     CarreraUPC,
@@ -47,6 +50,7 @@ from models import (
     RolCursoUPC,
     TipoActividadUPC,
     Usuario,
+    asegurar_columnas_usuario,
     ciclos_para_carrera,
     convertir_enum,
     db,
@@ -180,7 +184,10 @@ def create_app(test_config=None):
         SESSION_COOKIE_SAMESITE="Lax",
         SESSION_COOKIE_SECURE=os.getenv("COOKIE_SECURE", "0") == "1",
         PERMANENT_SESSION_LIFETIME=timedelta(hours=12),
-        MAX_CONTENT_LENGTH=1024 * 1024,
+        MAX_CONTENT_LENGTH=6 * 1024 * 1024,
+        AVATAR_UPLOAD_FOLDER=os.getenv(
+            "AVATAR_UPLOAD_FOLDER", str(Path(app.instance_path) / "avatares")
+        ),
         SYNC_UPC_CATALOG=True,
     )
     if test_config:
@@ -198,6 +205,7 @@ def create_app(test_config=None):
     db.init_app(app)
     with app.app_context():
         db.create_all()
+        asegurar_columnas_usuario()
         if app.config["SYNC_UPC_CATALOG"]:
             sincronizar_catalogo_upc()
 
@@ -231,8 +239,26 @@ def create_app(test_config=None):
             "default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; "
             "script-src 'self'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'"
         )
-        if g.get("usuario"):
+        if g.get("usuario") and request.endpoint != "avatar":
             respuesta.headers["Cache-Control"] = "private, no-store"
+        return respuesta
+
+    @app.errorhandler(413)
+    def archivo_demasiado_grande(_error):
+        flash("La foto supera el límite permitido de 5 MB.", "error")
+        destino = request.path if request.path in {"/registro", "/perfil"} else "/registro"
+        return redirect(destino), 303
+
+    @app.get("/media/avatares/<path:nombre_archivo>")
+    @login_required
+    def avatar(nombre_archivo):
+        respuesta = send_from_directory(
+            app.config["AVATAR_UPLOAD_FOLDER"],
+            nombre_archivo,
+            conditional=True,
+            max_age=60 * 60 * 24 * 30,
+        )
+        respuesta.headers["Cache-Control"] = "private, max-age=2592000, immutable"
         return respuesta
 
     def renderizar_contrato(template, contrato, **contexto_jinja):
@@ -360,6 +386,8 @@ def create_app(test_config=None):
             nombre = request.form.get("nombre", "").strip()
             correo = request.form.get("correo", "").strip().lower()
             password = request.form.get("password", "")
+            biografia = request.form.get("biografia", "").strip()
+            foto = request.files.get("foto")
             carrera_texto = request.form.get("carrera", "").strip()
             error_carrera = None
             try:
@@ -381,6 +409,10 @@ def create_app(test_config=None):
             ciclo = request.form.get("ciclo", "").strip()
             if not nombre or not correo or not password:
                 flash("Completa nombre, correo y contrasena.", "error")
+            elif foto is None or not foto.filename:
+                flash("Selecciona una foto de perfil.", "error")
+            elif len(biografia) > 220:
+                flash("Tu presentación puede tener hasta 220 caracteres.", "error")
             elif len(nombre) > 80 or len(carrera) > 80:
                 flash("Revisa la longitud de los datos ingresados.", "error")
             elif error_carrera:
@@ -406,21 +438,37 @@ def create_app(test_config=None):
             elif Usuario.query.filter_by(correo_institucional=correo).first():
                 flash("Ese correo ya esta registrado.", "error")
             else:
-                usuario = Usuario(
-                    nombre=nombre,
-                    correo_institucional=correo,
-                    carrera=carrera or None,
-                    ciclo=int(ciclo) if ciclo else None,
-                    intereses=", ".join(intereses) or None,
-                )
-                usuario.set_password(password)
-                db.session.add(usuario)
-                db.session.commit()
-                session.clear()
-                session.permanent = True
-                session["usuario_id"] = usuario.id
-                flash("Tu cuenta esta lista. Completa tus cursos y horarios.", "success")
-                return redirect(url_for("perfil"))
+                foto_archivo = None
+                try:
+                    foto_archivo = guardar_avatar(
+                        foto, app.config["AVATAR_UPLOAD_FOLDER"]
+                    )
+                    usuario = Usuario(
+                        nombre=nombre,
+                        correo_institucional=correo,
+                        foto_archivo=foto_archivo,
+                        biografia=biografia or None,
+                        carrera=carrera or None,
+                        ciclo=int(ciclo) if ciclo else None,
+                        intereses=", ".join(intereses) or None,
+                    )
+                    usuario.set_password(password)
+                    db.session.add(usuario)
+                    db.session.commit()
+                except ValueError as error:
+                    db.session.rollback()
+                    eliminar_avatar(foto_archivo, app.config["AVATAR_UPLOAD_FOLDER"])
+                    flash(str(error), "error")
+                except IntegrityError:
+                    db.session.rollback()
+                    eliminar_avatar(foto_archivo, app.config["AVATAR_UPLOAD_FOLDER"])
+                    flash("Ese correo ya está registrado.", "error")
+                else:
+                    session.clear()
+                    session.permanent = True
+                    session["usuario_id"] = usuario.id
+                    flash("Tu cuenta esta lista. Completa tus cursos y horarios.", "success")
+                    return redirect(url_for("perfil"))
         return render_template(
             "registro.html", catalogo_upc=contexto_catalogo_upc()
         )
@@ -465,6 +513,10 @@ def create_app(test_config=None):
     def perfil():
         if request.method == "POST":
             nombre = request.form.get("nombre", "").strip()
+            biografia = request.form.get("biografia", "").strip()
+            foto = request.files.get("foto")
+            foto_anterior = g.usuario.foto_archivo
+            foto_nueva = None
             carrera_texto = request.form.get("carrera", "").strip()
             ciclo = request.form.get("ciclo", "").strip()
             try:
@@ -479,6 +531,8 @@ def create_app(test_config=None):
                     raise ValueError("Tu nombre no puede quedar vacío.")
                 if len(nombre) > 80 or len(carrera) > 80:
                     raise ValueError("Uno de los campos supera la longitud permitida.")
+                if len(biografia) > 220:
+                    raise ValueError("Tu presentación puede tener hasta 220 caracteres.")
                 if ciclo and carrera_upc is None:
                     raise ValueError(
                         "Selecciona una carrera antes de indicar el ciclo."
@@ -493,6 +547,12 @@ def create_app(test_config=None):
                         f"El ciclo debe estar entre 1 y {len(ciclos_validos)}."
                     )
                 g.usuario.nombre = nombre
+                g.usuario.biografia = biografia or None
+                if foto is not None and foto.filename:
+                    foto_nueva = guardar_avatar(
+                        foto, app.config["AVATAR_UPLOAD_FOLDER"]
+                    )
+                    g.usuario.foto_archivo = foto_nueva
                 g.usuario.carrera = carrera or None
                 g.usuario.ciclo = int(ciclo) if ciclo else None
                 g.usuario.intereses = ", ".join(intereses) or None
@@ -502,10 +562,15 @@ def create_app(test_config=None):
                         carrera_upc.facultad if carrera_upc else None
                     )
                 db.session.commit()
+                if foto_nueva:
+                    eliminar_avatar(
+                        foto_anterior, app.config["AVATAR_UPLOAD_FOLDER"]
+                    )
                 flash("Perfil actualizado.", "success")
                 return redirect(url_for("perfil"))
             except ValueError as error:
                 db.session.rollback()
+                eliminar_avatar(foto_nueva, app.config["AVATAR_UPLOAD_FOLDER"])
                 flash(str(error), "error")
         return render_template(
             "perfil.html",

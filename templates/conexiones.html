@@ -1,0 +1,59 @@
+{% extends "base.html" %}
+
+{% block title %}Mis conexiones — Socialite{% endblock %}
+
+{% macro identidad(persona) %}
+  <div class="persona-mini">
+    <div class="avatar{% if persona.foto_url %} avatar-con-foto{% endif %}">
+      {% if persona.foto_url %}<img src="{{ persona.foto_url }}" alt="Foto de {{ persona.nombre }}" loading="lazy">{% else %}{{ persona.iniciales }}{% endif %}
+    </div>
+    <div><strong>{{ persona.nombre }}</strong><span>{{ persona.carrera or 'Estudiante UPC' }}{% if persona.ciclo %} · Ciclo {{ persona.ciclo }}{% endif %}</span></div>
+  </div>
+{% endmacro %}
+
+{% block content %}
+<div class="cabecera-pagina">
+  <div>
+    <span class="eyebrow">Tu red UPC</span>
+    <h1>Conexiones reales, con intención.</h1>
+    <p>Acepta solicitudes y conserva aquí a las personas con las que quieres coordinar.</p>
+  </div>
+</div>
+
+<div class="layout-conexiones">
+  <section class="tarjeta">
+    <div class="titulo-con-contador"><h2>Solicitudes recibidas</h2><span class="contador">{{ recibidas|length }}</span></div>
+    {% for conexion in recibidas %}
+      <article class="fila-conexion">
+        {{ identidad(conexion.persona) }}
+        <div class="acciones-compactas">
+          <form method="post" action="{{ url_for('aceptar_conexion', conexion_id=conexion.id) }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="boton boton-pequeno" type="submit">Aceptar</button></form>
+          <form method="post" action="{{ url_for('rechazar_conexion', conexion_id=conexion.id) }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="boton boton-secundario boton-pequeno" type="submit">Ahora no</button></form>
+        </div>
+      </article>
+    {% else %}<p class="estado-vacio-mini">No tienes solicitudes pendientes.</p>{% endfor %}
+  </section>
+
+  <section class="tarjeta">
+    <div class="titulo-con-contador"><h2>Mis contactos</h2><span class="contador">{{ aceptadas|length }}</span></div>
+    {% for conexion in aceptadas %}
+      <article class="fila-conexion">
+        {{ identidad(conexion.persona) }}
+        {% if conexion.persona.correo_institucional %}<a href="mailto:{{ conexion.persona.correo_institucional }}">{{ conexion.persona.correo_institucional }}</a>{% endif %}
+      </article>
+    {% else %}<p class="estado-vacio-mini">Cuando aceptes una conexión aparecerá aquí.</p>{% endfor %}
+  </section>
+
+  {% if enviadas %}
+  <section class="tarjeta conexiones-enviadas">
+    <div class="titulo-con-contador"><h2>Enviadas</h2><span class="contador">{{ enviadas|length }}</span></div>
+    {% for conexion in enviadas %}
+      <article class="fila-conexion">
+        {{ identidad(conexion.persona) }}
+        <form method="post" action="{{ url_for('cancelar_conexion', conexion_id=conexion.id) }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="boton boton-secundario boton-pequeno" type="submit">Cancelar</button></form>
+      </article>
+    {% endfor %}
+  </section>
+  {% endif %}
+</div>
+{% endblock %}

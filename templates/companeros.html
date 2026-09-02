@@ -22,18 +22,43 @@
   <a class="boton boton-secundario" href="{{ url_for('perfil') }}">Mejorar mi perfil</a>
 </div>
 
+<form class="tarjeta filtros-companeros" method="get" action="{{ url_for('companeros') }}">
+  <div class="campo campo-flex">
+    <label for="q">Buscar persona, carrera o interés</label>
+    <input type="search" id="q" name="q" value="{{ filtros.q }}" placeholder="Ej. software, fotografía…">
+  </div>
+  <div class="campo">
+    <label for="curso">Curso en común</label>
+    <select id="curso" name="curso">
+      <option value="">Todos los cursos</option>
+      {% for curso in cursos %}<option value="{{ curso.id }}"{% if filtros.curso == curso.id %} selected{% endif %}>{{ curso.codigo }} · {{ curso.nombre }}</option>{% endfor %}
+    </select>
+  </div>
+  <div class="campo">
+    <label for="afinidad">Afinidad mínima</label>
+    <select id="afinidad" name="afinidad">
+      {% for valor in [0, 25, 50, 70, 85] %}<option value="{{ valor }}"{% if filtros.afinidad == valor %} selected{% endif %}>{{ valor }}%{% if valor == 0 %} · cualquiera{% endif %}</option>{% endfor %}
+    </select>
+  </div>
+  <button class="boton" type="submit">Aplicar filtros</button>
+</form>
+
 {% if sugerencias %}
+  <div class="resultado-resumen">{{ paginacion.total }} resultado{% if paginacion.total != 1 %}s{% endif %} ordenados por compatibilidad</div>
   <div class="grid-companeros">
     {% for sugerencia in sugerencias %}
       <article class="tarjeta tarjeta-persona">
         <div class="persona-cabecera">
-          <div class="avatar">{{ sugerencia.usuario.nombre[:2]|upper }}</div>
+          <div class="avatar{% if sugerencia.usuario.foto_url %} avatar-con-foto{% endif %}">
+            {% if sugerencia.usuario.foto_url %}<img src="{{ sugerencia.usuario.foto_url }}" alt="Foto de {{ sugerencia.usuario.nombre }}" loading="lazy">{% else %}{{ sugerencia.usuario.iniciales }}{% endif %}
+          </div>
           <div>
             <h2>{{ sugerencia.usuario.nombre }}</h2>
             <p>{{ sugerencia.usuario.carrera or 'Estudiante UPC' }}{% if sugerencia.usuario.ciclo %} · Ciclo {{ sugerencia.usuario.ciclo }}{% endif %}</p>
           </div>
           <div class="afinidad">{{ sugerencia.porcentaje }}<small>%</small><span>afinidad</span></div>
         </div>
+        {% if sugerencia.usuario.biografia %}<p class="biografia-persona">{{ sugerencia.usuario.biografia }}</p>{% endif %}
         <div class="barra-afinidad"><i style="width: {{ sugerencia.porcentaje }}%"></i></div>
         <div class="metricas-match">
           <div>
@@ -74,9 +99,32 @@
             <p class="texto-suave">Hay pocas señales compartidas. Completen sus perfiles para aumentar la precisión del cálculo.</p>
           {% endif %}
         </div>
+        {% set conexion = conexiones.get(sugerencia.usuario.id) %}
+        <div class="acciones-persona">
+          {% if not conexion or conexion.estado == 'rechazada' %}
+            <form method="post" action="{{ url_for('solicitar_conexion', usuario_id=sugerencia.usuario.id) }}">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              <input type="hidden" name="siguiente" value="{{ request.full_path }}">
+              <button class="boton boton-ancho" type="submit">{% if conexion %}Volver a conectar{% else %}Quiero conectar{% endif %}</button>
+            </form>
+          {% elif conexion.estado == 'aceptada' %}
+            <a class="boton boton-secundario boton-ancho" href="{{ url_for('conexiones') }}">✓ Ya están conectados</a>
+          {% elif conexion.destinatario_id == g.usuario.id %}
+            <a class="boton boton-ancho" href="{{ url_for('conexiones') }}">Responder solicitud</a>
+          {% else %}
+            <span class="boton boton-desactivado boton-ancho">Solicitud enviada</span>
+          {% endif %}
+        </div>
       </article>
     {% endfor %}
   </div>
+  {% if paginacion.paginas > 1 %}
+    <nav class="paginacion" aria-label="Páginas de resultados">
+      {% if paginacion.tiene_anterior %}<a class="boton boton-secundario" href="{{ url_for('companeros', q=filtros.q, curso=filtros.curso or '', afinidad=filtros.afinidad, pagina=paginacion.pagina - 1) }}">← Anterior</a>{% endif %}
+      <span>Página {{ paginacion.pagina }} de {{ paginacion.paginas }}</span>
+      {% if paginacion.tiene_siguiente %}<a class="boton boton-secundario" href="{{ url_for('companeros', q=filtros.q, curso=filtros.curso or '', afinidad=filtros.afinidad, pagina=paginacion.pagina + 1) }}">Siguiente →</a>{% endif %}
+    </nav>
+  {% endif %}
 {% else %}
   <div class="estado-vacio">
     <span>◌</span>

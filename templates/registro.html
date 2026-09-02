@@ -14,11 +14,31 @@
     {% set carrera_form = request.form.get('carrera_upc_id', '') %}
     {% set ciclo_form = request.form.get('ciclo', '') %}
     {% set intereses_form = request.form.getlist('intereses') %}
-    <form method="post" action="{{ url_for('registro') }}" data-profile-form>
+    <form method="post" action="{{ url_for('registro') }}" enctype="multipart/form-data" data-profile-form>
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <div class="campo campo-foto">
+        <div class="foto-editor">
+          <div class="avatar-preview" data-photo-preview>
+            <span data-photo-fallback>+</span>
+            <img data-photo-image alt="Vista previa de tu foto" hidden>
+          </div>
+          <div>
+            <label for="foto">Foto de perfil</label>
+            <input type="file" id="foto" name="foto" accept="image/jpeg,image/png,image/webp" required data-photo-input>
+            <small>JPG, PNG o WebP · máximo 5 MB · mínimo 200 × 200 px.</small>
+          </div>
+        </div>
+      </div>
       <div class="campo">
         <label for="nombre">Nombre</label>
         <input type="text" id="nombre" name="nombre" value="{{ request.form.get('nombre', '') }}" autocomplete="name" required>
+      </div>
+      <div class="campo">
+        <div class="campo-titulo-linea">
+          <label for="biografia">Preséntate <small>(opcional)</small></label>
+          <span class="contador-caracteres" data-character-count>0 / 220</span>
+        </div>
+        <textarea id="biografia" name="biografia" maxlength="220" rows="3" placeholder="Ej. Busco compañeros para estudiar, crear proyectos y jugar fulbito después de clases." data-character-input>{{ request.form.get('biografia', '') }}</textarea>
       </div>
       <div class="campo">
         <label for="correo">Correo institucional</label>
@@ -57,7 +77,7 @@
       <div class="campo campo-intereses">
         <div class="campo-titulo-linea">
           <div>
-            <label for="intereses-busqueda">Tus intereses <small>(opcional)</small></label>
+            <label for="intereses-busqueda">Tus intereses</label>
             <small>Elige hasta {{ catalogo_upc.limites.max_intereses }} para mejorar tus matches.</small>
           </div>
           <span class="contador-intereses" data-interest-count>0 / {{ catalogo_upc.limites.max_intereses }}</span>

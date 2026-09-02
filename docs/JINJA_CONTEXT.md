@@ -33,7 +33,7 @@ Mantiene `sugerencias` con modelos para compatibilidad con el template actual y
 agrega `contrato`, listo para el nuevo frontend:
 
 - `contrato.resultados[]`
-  - `usuario`: `id`, `nombre`, `iniciales`, `carrera`, `ciclo`, `intereses`,
+  - `usuario`: `id`, `nombre`, `iniciales`, `foto_url`, `biografia`, `carrera`, `ciclo`, `intereses`,
     `cursos`, `horarios`, `perfil_completo`, `perfil_upc` y
     `participaciones_upc`.
   - `porcentaje`: afinidad final entre 0 y 100.
@@ -63,6 +63,9 @@ El mismo contrato esta disponible como JSON en `GET /api/v1/companeros`.
 
 Además de las variables actuales, entrega:
 
+- `perfil.foto_url`: ruta autenticada del avatar normalizado o `null` para
+  perfiles legados.
+- `perfil.biografia`: presentación pública de hasta 220 caracteres.
 - `perfil.perfil_upc`: campus, facultad, carrera normalizada, modalidad, objetivo, estilo de
   estudio, disponibilidad para Viernes Cultural, movilidad entre campus y
   espacio preferido.
@@ -99,9 +102,11 @@ Formularios POST listos para integrar:
 
 Todos los POST deben incluir `csrf_token`.
 
-`GET /registro` también recibe `catalogo_upc`. Para el multiselect se envía un
-campo `intereses` por opción seleccionada; el backend admite además una cadena
-separada por comas durante la transición del frontend.
+`GET /registro` también recibe `catalogo_upc`. Su POST usa
+`enctype="multipart/form-data"`, exige el campo `foto` (JPG, PNG o WebP, máximo
+5 MB y mínimo 200 × 200 px) y admite `biografia` con hasta 220 caracteres. Para
+el multiselect se envía un campo `intereses` por opción seleccionada; el backend
+admite además una cadena separada por comas durante la transición del frontend.
 
 ## `GET /personas/<id>` → `persona.html`
 
@@ -163,4 +168,7 @@ Acciones POST disponibles:
 - `403`: el usuario no tiene permiso para la accion.
 - `404`: recurso inexistente.
 - `429`: bloqueo temporal tras cinco intentos de login fallidos.
+- `413`: el cuerpo enviado supera el límite de carga.
 - Las respuestas autenticadas llevan `Cache-Control: private, no-store`.
+- Los avatares se sirven únicamente a usuarios autenticados desde
+  `/media/avatares/<archivo>` y usan caché privada de larga duración.
