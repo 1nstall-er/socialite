@@ -3,11 +3,21 @@
 {% block title %}Compañeros — Socialite{% endblock %}
 
 {% block content %}
+{% set nombres_componentes = {
+  'cursos': 'Cursos',
+  'horarios': 'Horarios',
+  'intereses': 'Intereses',
+  'campus': 'Campus',
+  'contexto_academico': 'Área académica',
+  'estilo_objetivo': 'Estilo y objetivo',
+  'vida_universitaria': 'Vida UPC',
+  'metas_curso': 'Metas de curso'
+} %}
 <div class="cabecera-pagina">
   <div>
     <span class="eyebrow">Hecho para ti</span>
     <h1>Personas con las que harías buen equipo</h1>
-    <p>La afinidad combina cursos, horas libres e intereses compartidos.</p>
+    <p>Comparamos señales académicas y sociales. Tú ves cuánto aporta cada una.</p>
   </div>
   <a class="boton boton-secundario" href="{{ url_for('perfil') }}">Mejorar mi perfil</a>
 </div>
@@ -25,6 +35,31 @@
           <div class="afinidad">{{ sugerencia.porcentaje }}<small>%</small><span>afinidad</span></div>
         </div>
         <div class="barra-afinidad"><i style="width: {{ sugerencia.porcentaje }}%"></i></div>
+        <div class="metricas-match">
+          <div>
+            <span>Probabilidad estimada</span>
+            <strong>{% if sugerencia.probabilidad_emparejamiento is not none %}{{ sugerencia.probabilidad_emparejamiento }}%{% else %}Sin datos{% endif %}</strong>
+          </div>
+          <div>
+            <span>Cobertura del cálculo</span>
+            <strong>{{ sugerencia.confianza }}%</strong>
+          </div>
+        </div>
+        {% if sugerencia.componentes %}
+          <details class="desglose-match">
+            <summary>Ver desglose matemático <span>+</span></summary>
+            <div class="componentes-match">
+              {% for clave, componente in sugerencia.componentes.items() %}
+                <div class="componente-match">
+                  <div><span>{{ nombres_componentes.get(clave, clave|replace('_', ' ')|title) }}</span><strong>{{ componente.porcentaje_similitud }}%</strong></div>
+                  <div class="barra-componente"><i style="width: {{ componente.porcentaje_similitud }}%"></i></div>
+                  <small>Peso {{ componente.peso_porcentual }}% · aporta {{ componente.contribucion_porcentual }} puntos</small>
+                </div>
+              {% endfor %}
+            </div>
+            <p class="nota-modelo">La probabilidad ajusta la afinidad según la cantidad de datos disponibles; todavía no usa historial de matches.</p>
+          </details>
+        {% endif %}
         <div class="razones">
           {% if sugerencia.cursos %}
             <div><span class="razon-icono">✓</span><p><strong>{{ sugerencia.cursos|length }} curso{% if sugerencia.cursos|length != 1 %}s{% endif %} en común</strong><small>{% for curso in sugerencia.cursos %}{{ curso.codigo }}{% if not loop.last %}, {% endif %}{% endfor %}</small></p></div>
@@ -36,7 +71,7 @@
             <div><span class="razon-icono">#</span><p><strong>Intereses compartidos</strong><small>{{ sugerencia.intereses|join(', ') }}</small></p></div>
           {% endif %}
           {% if not sugerencia.cursos and not sugerencia.horas and not sugerencia.intereses %}
-            <p class="texto-suave">Aún no encontramos coincidencias. Completen sus perfiles para afinar el resultado.</p>
+            <p class="texto-suave">Hay pocas señales compartidas. Completen sus perfiles para aumentar la precisión del cálculo.</p>
           {% endif %}
         </div>
       </article>

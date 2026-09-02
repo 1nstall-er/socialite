@@ -369,6 +369,14 @@ def create_app(test_config=None):
             except ValueError as error:
                 carrera_upc = None
                 error_carrera = str(error)
+            try:
+                intereses = normalizar_intereses_upc(
+                    request.form.getlist("intereses")
+                )
+                error_intereses = None
+            except ValueError as error:
+                intereses = []
+                error_intereses = str(error)
             carrera = carrera_upc.nombre if carrera_upc else carrera_texto
             ciclo = request.form.get("ciclo", "").strip()
             if not nombre or not correo or not password:
@@ -377,6 +385,8 @@ def create_app(test_config=None):
                 flash("Revisa la longitud de los datos ingresados.", "error")
             elif error_carrera:
                 flash(error_carrera, "error")
+            elif error_intereses:
+                flash(error_intereses, "error")
             elif ciclo and carrera_upc is None:
                 flash("Selecciona una carrera antes de indicar el ciclo.", "error")
             elif not es_correo_institucional(correo):
@@ -401,6 +411,7 @@ def create_app(test_config=None):
                     correo_institucional=correo,
                     carrera=carrera or None,
                     ciclo=int(ciclo) if ciclo else None,
+                    intereses=", ".join(intereses) or None,
                 )
                 usuario.set_password(password)
                 db.session.add(usuario)

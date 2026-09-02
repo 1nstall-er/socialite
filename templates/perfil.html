@@ -9,13 +9,22 @@
     <h1>Mi perfil</h1>
     <p>Mientras más completo esté, mejores serán tus coincidencias.</p>
   </div>
-  <div class="avatar-grande">{{ g.usuario.nombre[:2]|upper }}</div>
+  <div class="perfil-resumen">
+    <div class="avatar-grande">{{ g.usuario.nombre[:2]|upper }}</div>
+    <div>
+      <strong>{{ perfil.perfil_completo }}%</strong>
+      <span>perfil completo</span>
+    </div>
+  </div>
 </div>
 
 <div class="layout-perfil">
   <section class="tarjeta">
     <h2>Datos personales</h2>
-    <form method="post" action="{{ url_for('perfil') }}">
+    <p class="texto-suave">Estos datos alimentan directamente tu porcentaje de compatibilidad.</p>
+    {% set carrera_actual = perfil.perfil_upc.carrera.id if perfil.perfil_upc and perfil.perfil_upc.carrera else none %}
+    {% set intereses_seleccionados = perfil.intereses_detalle|map(attribute='clave')|list %}
+    <form method="post" action="{{ url_for('perfil') }}" data-profile-form>
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       <div class="campo">
         <label for="nombre">Nombre</label>
@@ -27,20 +36,56 @@
       </div>
       <div class="grid-dos">
         <div class="campo">
-          <label for="carrera">Carrera</label>
-          <input type="text" id="carrera" name="carrera" value="{{ g.usuario.carrera or '' }}">
+          <label for="carrera_upc_id">Carrera</label>
+          <select id="carrera_upc_id" name="carrera_upc_id" data-career-select required>
+            <option value="">Selecciona tu carrera</option>
+            {% for grupo in catalogo_upc.carreras_por_facultad %}
+              <optgroup label="{{ grupo.facultad_etiqueta }}">
+                {% for carrera in grupo.carreras %}
+                  <option value="{{ carrera.id }}" data-ciclos="{{ carrera.duracion_ciclos }}"{% if carrera.id == carrera_actual or (not carrera_actual and carrera.nombre == perfil.carrera) %} selected{% endif %}>{{ carrera.nombre }}</option>
+                {% endfor %}
+              </optgroup>
+            {% endfor %}
+          </select>
         </div>
         <div class="campo">
           <label for="ciclo">Ciclo</label>
-          <input type="number" id="ciclo" name="ciclo" value="{{ g.usuario.ciclo or '' }}" min="1" max="12">
+          <select id="ciclo" name="ciclo" data-cycle-select data-selected="{{ perfil.ciclo or '' }}" required>
+            <option value="">Selecciona tu ciclo</option>
+            {% for ciclo in catalogo_upc.ciclos %}
+              <option value="{{ ciclo.valor }}"{% if perfil.ciclo == ciclo.valor %} selected{% endif %}>{{ ciclo.etiqueta }}</option>
+            {% endfor %}
+          </select>
+          <small data-cycle-help>Elige primero tu carrera.</small>
         </div>
       </div>
-      <div class="campo">
-        <label for="intereses">Intereses</label>
-        <input type="text" id="intereses" name="intereses" value="{{ g.usuario.intereses or '' }}" placeholder="fotografía, fútbol, videojuegos">
-        <small>Sepáralos con comas.</small>
+      <div class="campo campo-intereses">
+        <div class="campo-titulo-linea">
+          <div>
+            <label for="intereses-busqueda">Intereses</label>
+            <small>Selecciona lo que realmente te gusta; influye en tu afinidad.</small>
+          </div>
+          <span class="contador-intereses" data-interest-count>0 / {{ catalogo_upc.limites.max_intereses }}</span>
+        </div>
+        <input class="buscador-intereses" type="search" id="intereses-busqueda" placeholder="Buscar programación, música, fútbol…" autocomplete="off" data-interest-search>
+        <div class="categorias-intereses" data-interest-picker data-max="{{ catalogo_upc.limites.max_intereses }}">
+          {% for grupo in catalogo_upc.intereses_por_categoria %}
+            <details class="categoria-intereses" data-interest-group{% if loop.first %} open{% endif %}>
+              <summary>{{ grupo.categoria_etiqueta }} <span>{{ grupo.intereses|length }}</span></summary>
+              <div class="chips-intereses">
+                {% for interes in grupo.intereses %}
+                  <label class="chip-interes" data-interest-option data-search="{{ (interes.etiqueta ~ ' ' ~ grupo.categoria_etiqueta)|lower }}">
+                    <input type="checkbox" name="intereses" value="{{ interes.clave }}"{% if interes.clave in intereses_seleccionados %} checked{% endif %}>
+                    <span>{{ interes.etiqueta }}</span>
+                  </label>
+                {% endfor %}
+              </div>
+            </details>
+          {% endfor %}
+          <p class="sin-resultados-intereses" data-interest-empty hidden>No encontramos ese interés.</p>
+        </div>
       </div>
-      <button class="boton" type="submit">Guardar cambios</button>
+      <button class="boton boton-ancho" type="submit">Guardar perfil</button>
     </form>
   </section>
 
@@ -120,4 +165,8 @@
     </section>
   </div>
 </div>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='profile-form.js') }}" defer></script>
 {% endblock %}

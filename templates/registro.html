@@ -11,7 +11,10 @@
   </div>
   <section class="tarjeta formulario-tarjeta">
     <h2>Crea tu cuenta</h2>
-    <form method="post" action="{{ url_for('registro') }}">
+    {% set carrera_form = request.form.get('carrera_upc_id', '') %}
+    {% set ciclo_form = request.form.get('ciclo', '') %}
+    {% set intereses_form = request.form.getlist('intereses') %}
+    <form method="post" action="{{ url_for('registro') }}" data-profile-form>
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       <div class="campo">
         <label for="nombre">Nombre</label>
@@ -23,17 +26,58 @@
       </div>
       <div class="campo">
         <label for="password">Contraseña</label>
-        <input type="password" id="password" name="password" minlength="8" autocomplete="new-password" required>
-        <small>Mínimo 8 caracteres.</small>
+        <input type="password" id="password" name="password" minlength="10" autocomplete="new-password" required>
+        <small>Mínimo 10 caracteres, incluyendo letras y números.</small>
       </div>
       <div class="grid-dos">
         <div class="campo">
-          <label for="carrera">Carrera</label>
-          <input type="text" id="carrera" name="carrera" value="{{ request.form.get('carrera', '') }}" placeholder="Ing. de Software">
+          <label for="carrera_upc_id">Carrera</label>
+          <select id="carrera_upc_id" name="carrera_upc_id" data-career-select required>
+            <option value="">Selecciona tu carrera</option>
+            {% for grupo in catalogo_upc.carreras_por_facultad %}
+              <optgroup label="{{ grupo.facultad_etiqueta }}">
+                {% for carrera in grupo.carreras %}
+                  <option value="{{ carrera.id }}" data-ciclos="{{ carrera.duracion_ciclos }}"{% if carrera_form|string == carrera.id|string %} selected{% endif %}>{{ carrera.nombre }}</option>
+                {% endfor %}
+              </optgroup>
+            {% endfor %}
+          </select>
         </div>
         <div class="campo">
           <label for="ciclo">Ciclo</label>
-          <input type="number" id="ciclo" name="ciclo" value="{{ request.form.get('ciclo', '') }}" min="1" max="12">
+          <select id="ciclo" name="ciclo" data-cycle-select data-selected="{{ ciclo_form }}" required>
+            <option value="">Selecciona tu ciclo</option>
+            {% for ciclo in catalogo_upc.ciclos %}
+              <option value="{{ ciclo.valor }}"{% if ciclo_form|string == ciclo.valor|string %} selected{% endif %}>{{ ciclo.etiqueta }}</option>
+            {% endfor %}
+          </select>
+          <small data-cycle-help>Elige primero tu carrera.</small>
+        </div>
+      </div>
+      <div class="campo campo-intereses">
+        <div class="campo-titulo-linea">
+          <div>
+            <label for="intereses-busqueda">Tus intereses <small>(opcional)</small></label>
+            <small>Elige hasta {{ catalogo_upc.limites.max_intereses }} para mejorar tus matches.</small>
+          </div>
+          <span class="contador-intereses" data-interest-count>0 / {{ catalogo_upc.limites.max_intereses }}</span>
+        </div>
+        <input class="buscador-intereses" type="search" id="intereses-busqueda" placeholder="Buscar programación, música, fútbol…" autocomplete="off" data-interest-search>
+        <div class="categorias-intereses" data-interest-picker data-max="{{ catalogo_upc.limites.max_intereses }}">
+          {% for grupo in catalogo_upc.intereses_por_categoria %}
+            <details class="categoria-intereses" data-interest-group{% if loop.first %} open{% endif %}>
+              <summary>{{ grupo.categoria_etiqueta }} <span>{{ grupo.intereses|length }}</span></summary>
+              <div class="chips-intereses">
+                {% for interes in grupo.intereses %}
+                  <label class="chip-interes" data-interest-option data-search="{{ (interes.etiqueta ~ ' ' ~ grupo.categoria_etiqueta)|lower }}">
+                    <input type="checkbox" name="intereses" value="{{ interes.clave }}"{% if interes.clave in intereses_form %} checked{% endif %}>
+                    <span>{{ interes.etiqueta }}</span>
+                  </label>
+                {% endfor %}
+              </div>
+            </details>
+          {% endfor %}
+          <p class="sin-resultados-intereses" data-interest-empty hidden>No encontramos ese interés.</p>
         </div>
       </div>
       <button class="boton boton-ancho" type="submit">Crear mi cuenta</button>
@@ -41,4 +85,8 @@
     <p class="texto-centro texto-suave">¿Ya tienes cuenta? <a href="{{ url_for('ingresar') }}">Ingresa</a></p>
   </section>
 </div>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='profile-form.js') }}" defer></script>
 {% endblock %}

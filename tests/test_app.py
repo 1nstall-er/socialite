@@ -69,6 +69,37 @@ class SocialiteTestCase(unittest.TestCase):
             self.assertNotEqual(usuario.password_hash, "segura1234")
             self.assertTrue(usuario.check_password("segura1234"))
 
+    def test_registro_renderiza_catalogos_y_guarda_selectores(self):
+        pagina = self.client.get("/registro").get_data(as_text=True)
+        self.assertIn('name="carrera_upc_id"', pagina)
+        self.assertEqual(pagina.count("data-ciclos="), 59)
+        self.assertEqual(pagina.count('type="checkbox" name="intereses"'), 50)
+        self.assertIn("profile-form.js", pagina)
+
+        with self.app.app_context():
+            software_id = CarreraUPC.query.filter_by(
+                clave="ingenieria-de-software"
+            ).one().id
+        respuesta = self.client.post(
+            "/registro",
+            data={
+                "nombre": "Ana",
+                "correo": "ana@upc.edu.pe",
+                "password": "segura1234",
+                "carrera_upc_id": str(software_id),
+                "ciclo": "5",
+                "intereses": ["programacion", "musica", "futbol"],
+            },
+            follow_redirects=True,
+        )
+        self.assertIn("Mi perfil", respuesta.get_data(as_text=True))
+        with self.app.app_context():
+            usuario = Usuario.query.one()
+            self.assertEqual(usuario.carrera, "Ingeniería de Software")
+            self.assertEqual(
+                usuario.lista_intereses, ["Programación", "Música", "Fútbol"]
+            )
+
     def test_formularios_rechazan_envios_sin_token_csrf(self):
         self.app.config["CSRF_ENABLED"] = True
         respuesta = self.client.post(
@@ -187,6 +218,8 @@ class SocialiteTestCase(unittest.TestCase):
         self.assertIn("1 curso en común", pagina)
         self.assertIn("1.0 h disponibles juntos", pagina)
         self.assertIn("fotografia", pagina)
+        self.assertIn("Probabilidad estimada", pagina)
+        self.assertIn("Ver desglose matemático", pagina)
 
     def test_matching_fusiona_bloques_y_no_duplica_minutos(self):
         propios = [
