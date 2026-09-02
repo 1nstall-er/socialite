@@ -1,0 +1,29 @@
+{% extends "base.html" %}
+
+{% block title %}Ingresar — Socialite{% endblock %}
+
+{% block content %}
+<div class="pagina-auth pagina-auth-compacta">
+  <div class="auth-intro">
+    <span class="eyebrow">Qué bueno verte</span>
+    <h1>Vuelve a conectar.</h1>
+    <p>Tus grupos y nuevas coincidencias te esperan.</p>
+  </div>
+  <section class="tarjeta formulario-tarjeta">
+    <h2>Ingresa a Socialite</h2>
+    <form method="post">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <div class="campo">
+        <label for="correo">Correo institucional</label>
+        <input type="email" id="correo" name="correo" value="{{ request.form.get('correo', '') }}" placeholder="uXXXXXXXX@upc.edu.pe" autocomplete="email" required>
+      </div>
+      <div class="campo">
+        <label for="password">Contraseña</label>
+        <input type="password" id="password" name="password" autocomplete="current-password" required>
+      </div>
+      <button class="boton boton-ancho" type="submit">Ingresar</button>
+    </form>
+    <p class="texto-centro texto-suave">¿Aún no estás aquí? <a href="{{ url_for('registro') }}">Crea tu cuenta</a></p>
+  </section>
+</div>
+{% endblock %}

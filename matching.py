@@ -1,9 +1,4 @@
-"""Logica de matching para grupos de estudio y contactos.
-
-El scoring es intencionalmente simple para el MVP. Se puede reemplazar
-por algo mas sofisticado una vez que haya datos reales de que grupos
-funcionan (se reunen mas de una vez).
-"""
+"""Reglas transparentes de afinidad para el MVP de Socialite."""
 
 PESO_MISMO_CURSO = 0.5
 PESO_HORAS_COMPARTIDAS = 0.3
@@ -11,16 +6,25 @@ PESO_INTERESES = 0.2
 
 
 def score(mismo_curso, horas_compartidas, intereses_comunes):
-    puntaje = 0.0
-    if mismo_curso:
-        puntaje += PESO_MISMO_CURSO
-    puntaje += PESO_HORAS_COMPARTIDAS * horas_compartidas
-    puntaje += PESO_INTERESES * intereses_comunes
-    return puntaje
+    """Devuelve una afinidad entre 0 y 1.
+
+    Dos horas libres y tres intereses compartidos alcanzan el maximo de sus
+    respectivos componentes. Esto evita que muchos bloques inflen el puntaje.
+    """
+    cursos = 1.0 if mismo_curso else 0.0
+    horarios = min(max(horas_compartidas, 0) / 2, 1.0)
+    intereses = min(max(intereses_comunes, 0) / 3, 1.0)
+    return round(
+        PESO_MISMO_CURSO * cursos
+        + PESO_HORAS_COMPARTIDAS * horarios
+        + PESO_INTERESES * intereses,
+        4,
+    )
 
 
 def ordenar_candidatos(candidatos):
-    """Ordena candidatos de mayor a menor puntaje.
-    Cada candidato es un dict con la clave 'score'.
-    """
-    return sorted(candidatos, key=lambda c: c["score"], reverse=True)
+    """Ordena candidatos por afinidad y usa el nombre como desempate."""
+    return sorted(
+        candidatos,
+        key=lambda candidato: (-candidato["score"], candidato["usuario"].nombre.lower()),
+    )

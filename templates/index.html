@@ -1,25 +1,62 @@
 {% extends "base.html" %}
 
-{% block title %}Socialite - Encuentra tu grupo{% endblock %}
+{% block title %}Socialite — Tu comunidad universitaria{% endblock %}
 
 {% block content %}
-<h1>Encuentra con quien estudiar en tu universidad</h1>
-<p>
-  Socialite te conecta con companeros de tu propia universidad para armar
-  grupos de estudio y hacer contactos, sin la presion de acercarte tu primero.
-  Todas las quedadas ocurren dentro del campus.
-</p>
-
-<section>
-  <h2>Que puedes hacer</h2>
-  <ul>
-    <li>Unirte a un grupo de estudio por curso y horario.</li>
-    <li>Crear tu propio grupo y dejar que la gente se sume.</li>
-    <li>Conocer gente con intereses parecidos, a tu ritmo.</li>
-  </ul>
+<section class="hero">
+  <div class="hero-contenido">
+    <span class="eyebrow">Tu campus, tu gente</span>
+    <h1>Estudiar juntos hace la universidad más simple.</h1>
+    <p class="subtitulo">
+      Encuentra compañeros que llevan tus cursos, coinciden con tus horarios
+      y comparten tus intereses. Conexiones reales, siempre dentro del campus.
+    </p>
+    <div class="acciones">
+      {% if g.usuario %}
+        <a class="boton" href="{{ url_for('companeros') }}">Ver mis coincidencias</a>
+        <a class="boton boton-secundario" href="{{ url_for('grupos') }}">Explorar grupos</a>
+      {% else %}
+        <a class="boton" href="{{ url_for('registro') }}">Crear mi perfil</a>
+        <a class="boton boton-secundario" href="{{ url_for('grupos') }}">Explorar grupos</a>
+      {% endif %}
+    </div>
+    <div class="prueba-social">
+      <strong>{{ total_usuarios }}</strong> estudiantes ·
+      <strong>{{ total_grupos }}</strong> grupos activos
+    </div>
+  </div>
+  <div class="hero-tarjeta" aria-hidden="true">
+    <div class="mini-perfiles">
+      <span>AM</span><span>JR</span><span>LC</span>
+    </div>
+    <span class="estado"><i></i> Coincidencia encontrada</span>
+    <h2>Cálculo I</h2>
+    <p>Martes · 2 horas libres en común</p>
+    <div class="afinidad-grande">86% <small>afinidad</small></div>
+  </div>
 </section>
 
-<p>
-  <a href="{{ url_for('grupos') }}">Ver grupos disponibles</a>
-</p>
+<section class="seccion">
+  <div class="encabezado-seccion">
+    <span class="eyebrow">Cómo funciona</span>
+    <h2>Tres pasos, cero momentos incómodos.</h2>
+  </div>
+  <div class="grid-tres">
+    <article class="paso">
+      <span class="numero">01</span>
+      <h3>Completa tu perfil</h3>
+      <p>Agrega tus cursos, horas disponibles e intereses.</p>
+    </article>
+    <article class="paso">
+      <span class="numero">02</span>
+      <h3>Descubre afinidades</h3>
+      <p>Te mostramos personas compatibles y por qué encajan contigo.</p>
+    </article>
+    <article class="paso">
+      <span class="numero">03</span>
+      <h3>Únete en el campus</h3>
+      <p>Crea o encuentra un grupo con lugar y horario definidos.</p>
+    </article>
+  </div>
+</section>
 {% endblock %}

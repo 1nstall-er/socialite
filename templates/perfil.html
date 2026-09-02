@@ -1,0 +1,123 @@
+{% extends "base.html" %}
+
+{% block title %}Mi perfil — Socialite{% endblock %}
+
+{% block content %}
+<div class="cabecera-pagina">
+  <div>
+    <span class="eyebrow">Tu identidad en Socialite</span>
+    <h1>Mi perfil</h1>
+    <p>Mientras más completo esté, mejores serán tus coincidencias.</p>
+  </div>
+  <div class="avatar-grande">{{ g.usuario.nombre[:2]|upper }}</div>
+</div>
+
+<div class="layout-perfil">
+  <section class="tarjeta">
+    <h2>Datos personales</h2>
+    <form method="post" action="{{ url_for('perfil') }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <div class="campo">
+        <label for="nombre">Nombre</label>
+        <input type="text" id="nombre" name="nombre" value="{{ g.usuario.nombre }}" required>
+      </div>
+      <div class="campo">
+        <label>Correo UPC</label>
+        <input type="email" value="{{ g.usuario.correo_institucional }}" disabled>
+      </div>
+      <div class="grid-dos">
+        <div class="campo">
+          <label for="carrera">Carrera</label>
+          <input type="text" id="carrera" name="carrera" value="{{ g.usuario.carrera or '' }}">
+        </div>
+        <div class="campo">
+          <label for="ciclo">Ciclo</label>
+          <input type="number" id="ciclo" name="ciclo" value="{{ g.usuario.ciclo or '' }}" min="1" max="12">
+        </div>
+      </div>
+      <div class="campo">
+        <label for="intereses">Intereses</label>
+        <input type="text" id="intereses" name="intereses" value="{{ g.usuario.intereses or '' }}" placeholder="fotografía, fútbol, videojuegos">
+        <small>Sepáralos con comas.</small>
+      </div>
+      <button class="boton" type="submit">Guardar cambios</button>
+    </form>
+  </section>
+
+  <div class="columna">
+    <section class="tarjeta">
+      <div class="titulo-con-contador">
+        <h2>Mis cursos</h2>
+        <span class="contador">{{ g.usuario.cursos|length }}</span>
+      </div>
+      {% if g.usuario.cursos %}
+        <ul class="lista-limpia">
+          {% for curso in g.usuario.cursos %}
+            <li class="item-lista">
+              <div><strong>{{ curso.codigo }}</strong><span>{{ curso.nombre }}</span></div>
+              <form method="post" action="{{ url_for('eliminar_curso', curso_id=curso.id) }}">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <button class="boton-icono" type="submit" aria-label="Eliminar {{ curso.codigo }}">×</button>
+              </form>
+            </li>
+          {% endfor %}
+        </ul>
+      {% else %}
+        <p class="estado-vacio-mini">Agrega un curso para encontrar compañeros y crear grupos de estudio.</p>
+      {% endif %}
+      <form class="formulario-inline" method="post" action="{{ url_for('agregar_curso') }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <div class="campo">
+          <label for="codigo">Código</label>
+          <input type="text" id="codigo" name="codigo" placeholder="MA101" required>
+        </div>
+        <div class="campo campo-flex">
+          <label for="nombre_curso">Curso</label>
+          <input type="text" id="nombre_curso" name="nombre_curso" placeholder="Cálculo I" required>
+        </div>
+        <button class="boton boton-cuadrado" type="submit" aria-label="Agregar curso">+</button>
+      </form>
+    </section>
+
+    <section class="tarjeta">
+      <div class="titulo-con-contador">
+        <h2>Horas disponibles</h2>
+        <span class="contador">{{ g.usuario.horarios|length }}</span>
+      </div>
+      {% if g.usuario.horarios %}
+        <ul class="lista-limpia">
+          {% for horario in g.usuario.horarios %}
+            <li class="item-lista">
+              <div><strong>{{ horario.dia }}</strong><span>{{ horario.hora_inicio }}–{{ horario.hora_fin }}</span></div>
+              <form method="post" action="{{ url_for('eliminar_horario', horario_id=horario.id) }}">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <button class="boton-icono" type="submit" aria-label="Eliminar horario">×</button>
+              </form>
+            </li>
+          {% endfor %}
+        </ul>
+      {% else %}
+        <p class="estado-vacio-mini">Indica cuándo estás libre entre clases.</p>
+      {% endif %}
+      <form class="formulario-horario" method="post" action="{{ url_for('agregar_horario') }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <div class="campo">
+          <label for="dia">Día</label>
+          <select id="dia" name="dia">
+            {% for dia in dias %}<option value="{{ dia }}">{{ dia }}</option>{% endfor %}
+          </select>
+        </div>
+        <div class="campo">
+          <label for="hora_inicio">Desde</label>
+          <input type="time" id="hora_inicio" name="hora_inicio" required>
+        </div>
+        <div class="campo">
+          <label for="hora_fin">Hasta</label>
+          <input type="time" id="hora_fin" name="hora_fin" required>
+        </div>
+        <button class="boton boton-cuadrado" type="submit" aria-label="Agregar horario">+</button>
+      </form>
+    </section>
+  </div>
+</div>
+{% endblock %}

@@ -1,39 +1,53 @@
 {% extends "base.html" %}
 
-{% block title %}Companeros sugeridos - Socialite{% endblock %}
+{% block title %}Compañeros — Socialite{% endblock %}
 
 {% block content %}
-<h1>Encuentra companeros de estudio</h1>
-<p>Elige tu perfil y te mostramos con quien tienes mas en comun (mismo curso y horarios que coinciden).</p>
+<div class="cabecera-pagina">
+  <div>
+    <span class="eyebrow">Hecho para ti</span>
+    <h1>Personas con las que harías buen equipo</h1>
+    <p>La afinidad combina cursos, horas libres e intereses compartidos.</p>
+  </div>
+  <a class="boton boton-secundario" href="{{ url_for('perfil') }}">Mejorar mi perfil</a>
+</div>
 
-<form method="get" action="{{ url_for('companeros') }}">
-  <p>
-    <label for="usuario">Yo soy</label><br>
-    <select id="usuario" name="usuario">
-      {% for u in usuarios %}
-      <option value="{{ u.id }}" {% if seleccionado and seleccionado.id == u.id %}selected{% endif %}>{{ u.nombre }}</option>
-      {% endfor %}
-    </select>
-    <button type="submit">Ver sugerencias</button>
-  </p>
-</form>
-
-{% if seleccionado %}
-<h2>Sugerencias para {{ seleccionado.nombre }}</h2>
 {% if sugerencias %}
-<ol>
-  {% for s in sugerencias %}
-  <li>
-    <strong>{{ s.usuario.nombre }}</strong>
-    {% if s.usuario.carrera %} - {{ s.usuario.carrera }}{% endif %}
-    <span>(afinidad: {{ "%.1f"|format(s.score) }})</span>
-  </li>
-  {% endfor %}
-</ol>
+  <div class="grid-companeros">
+    {% for sugerencia in sugerencias %}
+      <article class="tarjeta tarjeta-persona">
+        <div class="persona-cabecera">
+          <div class="avatar">{{ sugerencia.usuario.nombre[:2]|upper }}</div>
+          <div>
+            <h2>{{ sugerencia.usuario.nombre }}</h2>
+            <p>{{ sugerencia.usuario.carrera or 'Estudiante UPC' }}{% if sugerencia.usuario.ciclo %} · Ciclo {{ sugerencia.usuario.ciclo }}{% endif %}</p>
+          </div>
+          <div class="afinidad">{{ sugerencia.porcentaje }}<small>%</small><span>afinidad</span></div>
+        </div>
+        <div class="barra-afinidad"><i style="width: {{ sugerencia.porcentaje }}%"></i></div>
+        <div class="razones">
+          {% if sugerencia.cursos %}
+            <div><span class="razon-icono">✓</span><p><strong>{{ sugerencia.cursos|length }} curso{% if sugerencia.cursos|length != 1 %}s{% endif %} en común</strong><small>{% for curso in sugerencia.cursos %}{{ curso.codigo }}{% if not loop.last %}, {% endif %}{% endfor %}</small></p></div>
+          {% endif %}
+          {% if sugerencia.horas %}
+            <div><span class="razon-icono">◷</span><p><strong>{{ sugerencia.horas }} h disponibles juntos</strong><small>Coincidencia entre clases</small></p></div>
+          {% endif %}
+          {% if sugerencia.intereses %}
+            <div><span class="razon-icono">#</span><p><strong>Intereses compartidos</strong><small>{{ sugerencia.intereses|join(', ') }}</small></p></div>
+          {% endif %}
+          {% if not sugerencia.cursos and not sugerencia.horas and not sugerencia.intereses %}
+            <p class="texto-suave">Aún no encontramos coincidencias. Completen sus perfiles para afinar el resultado.</p>
+          {% endif %}
+        </div>
+      </article>
+    {% endfor %}
+  </div>
 {% else %}
-<p>Todavia no hay otros usuarios para sugerir.</p>
+  <div class="estado-vacio">
+    <span>◌</span>
+    <h2>Tú eres la primera persona por aquí</h2>
+    <p>Cuando se registren más estudiantes, sus coincidencias aparecerán en esta pantalla.</p>
+    <a class="boton boton-secundario" href="{{ url_for('grupos') }}">Explorar grupos</a>
+  </div>
 {% endif %}
-{% endif %}
-
-<p><a href="{{ url_for('index') }}">Volver al inicio</a></p>
 {% endblock %}

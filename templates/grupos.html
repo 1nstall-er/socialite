@@ -1,46 +1,126 @@
 {% extends "base.html" %}
 
-{% block title %}Grupos disponibles - Socialite{% endblock %}
+{% block title %}Grupos — Socialite{% endblock %}
 
 {% block content %}
-<h1>Grupos disponibles</h1>
+<div class="cabecera-pagina">
+  <div>
+    <span class="eyebrow">Planes dentro del campus</span>
+    <h1>Encuentra tu próximo grupo</h1>
+    <p>Estudia, conversa y conoce personas con un plan claro.</p>
+  </div>
+</div>
 
-<section>
-  <h2>Crear un grupo</h2>
+{% if g.usuario %}
+<details class="tarjeta creador-grupo">
+  <summary><span>Crear un grupo</span><span class="circulo-mas">+</span></summary>
   <form method="post" action="{{ url_for('grupos') }}">
-    <p>
-      <label for="tipo">Tipo</label><br>
-      <select id="tipo" name="tipo">
-        {% for t in tipos %}
-        <option value="{{ t }}">{{ t }}</option>
-        {% endfor %}
-      </select>
-    </p>
-    <p>
-      <label for="lugar">Lugar en el campus</label><br>
-      <input type="text" id="lugar" name="lugar" placeholder="Biblioteca, piso 3">
-    </p>
-    <p>
-      <button type="submit">Crear grupo</button>
-    </p>
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <div class="grid-dos">
+      <div class="campo">
+        <label for="tipo">Tipo</label>
+        <select id="tipo" name="tipo">
+          {% for tipo in tipos %}<option value="{{ tipo }}">{{ tipo|capitalize }}</option>{% endfor %}
+        </select>
+      </div>
+      <div class="campo">
+        <label for="curso_id">Curso <small>(para estudio)</small></label>
+        <select id="curso_id" name="curso_id">
+          <option value="">Sin curso</option>
+          {% for curso in g.usuario.cursos %}<option value="{{ curso.id }}">{{ curso.codigo }} · {{ curso.nombre }}</option>{% endfor %}
+        </select>
+      </div>
+    </div>
+    <div class="grid-dos">
+      <div class="campo">
+        <label for="lugar">Lugar en el campus</label>
+        <input type="text" id="lugar" name="lugar" placeholder="Biblioteca, piso 3" required>
+      </div>
+      <div class="campo">
+        <label for="dia">Día</label>
+        <select id="dia" name="dia">
+          {% for dia in dias %}<option value="{{ dia }}">{{ dia }}</option>{% endfor %}
+        </select>
+      </div>
+    </div>
+    <div class="grid-tres-form">
+      <div class="campo">
+        <label for="hora_inicio">Desde</label>
+        <input type="time" id="hora_inicio" name="hora_inicio" required>
+      </div>
+      <div class="campo">
+        <label for="hora_fin">Hasta</label>
+        <input type="time" id="hora_fin" name="hora_fin" required>
+      </div>
+      <div class="campo">
+        <label for="max_miembros">Capacidad</label>
+        <input type="number" id="max_miembros" name="max_miembros" value="6" min="2" max="12" required>
+      </div>
+    </div>
+    <button class="boton" type="submit">Publicar grupo</button>
   </form>
-</section>
+</details>
+{% else %}
+<div class="franja-cta">
+  <span>¿Quieres crear o unirte a uno?</span>
+  <a class="boton boton-pequeno" href="{{ url_for('ingresar', siguiente=url_for('grupos')) }}">Ingresa a Socialite</a>
+</div>
+{% endif %}
 
-<section>
-  <h2>Grupos activos</h2>
+<section class="seccion-grupos">
+  <div class="titulo-con-contador">
+    <h2>Grupos activos</h2>
+    <span class="contador">{{ grupos|length }}</span>
+  </div>
   {% if grupos %}
-  <ul>
-    {% for grupo in grupos %}
-    <li>
-      <strong>{{ grupo.tipo }}</strong>
-      {% if grupo.lugar %} - {{ grupo.lugar }}{% endif %}
-    </li>
-    {% endfor %}
-  </ul>
+    <div class="grid-grupos">
+      {% for grupo in grupos %}
+        <article class="tarjeta tarjeta-grupo">
+          <div class="grupo-superior">
+            <span class="etiqueta etiqueta-{{ grupo.tipo }}">{{ grupo.tipo|capitalize }}</span>
+            <span class="cupos">{{ grupo.miembros|length }}/{{ grupo.max_miembros }} personas</span>
+          </div>
+          <h3>{{ grupo.curso.nombre if grupo.curso else 'Conocer gente nueva' }}</h3>
+          {% if grupo.curso %}<p class="codigo-curso">{{ grupo.curso.codigo }}</p>{% endif %}
+          <dl class="datos-grupo">
+            <div><dt>Día</dt><dd>{{ grupo.dia }}, {{ grupo.hora_inicio }}–{{ grupo.hora_fin }}</dd></div>
+            <div><dt>Lugar</dt><dd>{{ grupo.lugar }}</dd></div>
+            <div><dt>Organiza</dt><dd>{{ grupo.creador.nombre }}</dd></div>
+          </dl>
+          <div class="miembros" aria-label="Miembros del grupo">
+            {% for miembro in grupo.miembros[:4] %}
+              <span title="{{ miembro.nombre }}">{{ miembro.nombre[:2]|upper }}</span>
+            {% endfor %}
+            {% if grupo.miembros|length > 4 %}<b>+{{ grupo.miembros|length - 4 }}</b>{% endif %}
+          </div>
+          {% if g.usuario %}
+            {% if g.usuario in grupo.miembros %}
+              {% if grupo.creador_id == g.usuario.id %}
+                <span class="boton boton-desactivado boton-ancho">Eres quien organiza</span>
+              {% else %}
+                <form method="post" action="{{ url_for('salir_grupo', grupo_id=grupo.id) }}">
+                  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                  <button class="boton boton-secundario boton-ancho" type="submit">Salir del grupo</button>
+                </form>
+              {% endif %}
+            {% elif grupo.esta_lleno %}
+              <span class="boton boton-desactivado boton-ancho">Grupo completo</span>
+            {% else %}
+              <form method="post" action="{{ url_for('unirse_grupo', grupo_id=grupo.id) }}">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <button class="boton boton-ancho" type="submit">Unirme al grupo</button>
+              </form>
+            {% endif %}
+          {% endif %}
+        </article>
+      {% endfor %}
+    </div>
   {% else %}
-  <p>Todavia no hay grupos. Se el primero en crear uno.</p>
+    <div class="estado-vacio">
+      <span>◎</span>
+      <h3>Aún no hay grupos</h3>
+      <p>Sé la primera persona en proponer un plan dentro del campus.</p>
+    </div>
   {% endif %}
 </section>
-
-<p><a href="{{ url_for('index') }}">Volver al inicio</a></p>
 {% endblock %}
