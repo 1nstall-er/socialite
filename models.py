@@ -646,30 +646,6 @@ class Usuario(db.Model):
         )
         return round(sum(secciones) / len(secciones) * 100)
 
-
-def asegurar_columnas_usuario() -> None:
-    """Añade campos opcionales nuevos sin invalidar la SQLite local existente.
-
-    El proyecto aún no incorpora Alembic. Esta migración aditiva conserva los
-    perfiles del MVP y es idempotente; una instalación nueva ya trae las columnas
-    desde ``create_all``.
-    """
-    inspector = inspect(db.engine)
-    if "usuarios" not in inspector.get_table_names():
-        return
-    existentes = {columna["name"] for columna in inspector.get_columns("usuarios")}
-    definiciones = {
-        "foto_archivo": "VARCHAR(160)",
-        "biografia": "VARCHAR(220)",
-    }
-    for nombre, tipo_sql in definiciones.items():
-        if nombre not in existentes:
-            db.session.execute(
-                text(f'ALTER TABLE usuarios ADD COLUMN "{nombre}" {tipo_sql}')
-            )
-    db.session.commit()
-
-
 class Curso(db.Model):
     __tablename__ = "cursos"
 
