@@ -1712,3 +1712,58 @@ textarea:focus-visible {
   outline: 2px solid var(--verde);
   outline-offset: 2px;
 }
+
+.codigo-verificacion {
+  max-width: 13rem;
+  font-size: 1.8rem;
+  font-weight: 700;
+  letter-spacing: 0.35rem;
+  text-align: center;
+}
+
+.formulario-reenvio {
+  display: grid;
+  justify-items: center;
+  gap: 0.35rem;
+  margin-top: 1rem;
+}
+
+.layout-seguridad {
+  display: grid;
+  grid-template-columns: minmax(0, 1.4fr) minmax(260px, 0.8fr);
+  gap: 1.25rem;
+  align-items: start;
+}
+
+.zona-riesgo {
+  border-color: #e6b7ad;
+}
+
+.boton-peligro {
+  border-color: #a33b2b;
+  background: #a33b2b;
+  color: #fff;
+}
+
+.acciones-contacto {
+  display: grid;
+  justify-items: end;
+  gap: 0.35rem;
+}
+
+.enlace-seguridad {
+  color: var(--texto-suave);
+  font-size: 0.82rem;
+  text-decoration: underline;
+  text-underline-offset: 0.2rem;
+}
+
+@media (max-width: 760px) {
+  .layout-seguridad {
+    grid-template-columns: 1fr;
+  }
+
+  .acciones-contacto {
+    justify-items: start;
+  }
+}

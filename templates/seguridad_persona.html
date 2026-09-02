@@ -1,0 +1,50 @@
+{% extends "base.html" %}
+
+{% block title %}Seguridad sobre {{ persona.nombre }} — Socialite{% endblock %}
+
+{% block content %}
+<div class="cabecera-pagina cabecera-seguridad">
+  <div>
+    <span class="eyebrow">Herramientas de seguridad</span>
+    <h1>{{ persona.nombre }}</h1>
+    <p>Los reportes son privados. La otra persona no sabrá quién lo envió.</p>
+  </div>
+  <a class="boton boton-secundario" href="{{ url_for('companeros') }}">Volver</a>
+</div>
+
+<div class="layout-seguridad">
+  <section class="tarjeta formulario-tarjeta">
+    <h2>Enviar un reporte</h2>
+    <form method="post" action="{{ url_for('reportar_persona', usuario_id=persona.id) }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <div class="campo">
+        <label for="motivo">Motivo</label>
+        <select id="motivo" name="motivo" required>
+          <option value="">Selecciona una opción</option>
+          {% for motivo in motivos %}<option value="{{ motivo.valor }}">{{ motivo.etiqueta }}</option>{% endfor %}
+        </select>
+      </div>
+      <div class="campo">
+        <label for="detalle">Cuéntanos qué pasó <small>(opcional)</small></label>
+        <textarea id="detalle" name="detalle" maxlength="500" rows="5" placeholder="Incluye información concreta que ayude a revisar el caso."></textarea>
+      </div>
+      <button class="boton boton-ancho" type="submit">Enviar reporte privado</button>
+    </form>
+  </section>
+
+  <section class="tarjeta zona-riesgo">
+    <span class="eyebrow">Control inmediato</span>
+    <h2>Bloquear contacto</h2>
+    <p>Se eliminará cualquier solicitud o conexión existente y dejarán de aparecerse en el matching.</p>
+    {% if bloqueo %}
+      <p class="texto-suave">Ya bloqueaste a esta persona. Puedes administrar el bloqueo desde Seguridad.</p>
+      <a class="boton boton-secundario boton-ancho" href="{{ url_for('seguridad') }}">Administrar bloqueos</a>
+    {% else %}
+      <form method="post" action="{{ url_for('bloquear_persona', usuario_id=persona.id) }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <button class="boton boton-peligro boton-ancho" type="submit">Bloquear a {{ persona.nombre }}</button>
+      </form>
+    {% endif %}
+  </section>
+</div>
+{% endblock %}

@@ -39,7 +39,10 @@
     {% for conexion in aceptadas %}
       <article class="fila-conexion">
         {{ identidad(conexion.persona) }}
-        {% if conexion.persona.correo_institucional %}<a href="mailto:{{ conexion.persona.correo_institucional }}">{{ conexion.persona.correo_institucional }}</a>{% endif %}
+        <div class="acciones-contacto">
+          {% if conexion.persona.correo_institucional %}<a href="mailto:{{ conexion.persona.correo_institucional }}">{{ conexion.persona.correo_institucional }}</a>{% endif %}
+          <a class="enlace-seguridad" href="{{ url_for('seguridad_persona', usuario_id=conexion.persona.id) }}">Reportar o bloquear</a>
+        </div>
       </article>
     {% else %}<p class="estado-vacio-mini">Cuando aceptes una conexión aparecerá aquí.</p>{% endfor %}
   </section>

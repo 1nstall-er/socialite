@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+
+{% block title %}Seguridad — Socialite{% endblock %}
+
+{% block content %}
+<div class="cabecera-pagina">
+  <div>
+    <span class="eyebrow">Privacidad y seguridad</span>
+    <h1>Tú decides quién puede encontrarte.</h1>
+    <p>Las personas bloqueadas no pueden conectarse contigo ni aparecer en tus recomendaciones de compañeros.</p>
+  </div>
+</div>
+
+<section class="tarjeta seguridad-lista">
+  <div class="titulo-con-contador"><h2>Personas bloqueadas</h2><span class="contador">{{ bloqueos|length }}</span></div>
+  {% for bloqueo in bloqueos %}
+    <article class="fila-conexion">
+      <div class="persona-mini">
+        <div class="avatar{% if bloqueo.bloqueado.foto_url %} avatar-con-foto{% endif %}">
+          {% if bloqueo.bloqueado.foto_url %}<img src="{{ bloqueo.bloqueado.foto_url }}" alt="Foto de {{ bloqueo.bloqueado.nombre }}" loading="lazy">{% else %}{{ bloqueo.bloqueado.iniciales }}{% endif %}
+        </div>
+        <div><strong>{{ bloqueo.bloqueado.nombre }}</strong><span>{{ bloqueo.bloqueado.carrera or 'Estudiante UPC' }}</span></div>
+      </div>
+      <form method="post" action="{{ url_for('desbloquear_persona', bloqueo_id=bloqueo.id) }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <button class="boton boton-secundario boton-pequeno" type="submit">Desbloquear</button>
+      </form>
+    </article>
+  {% else %}
+    <p class="estado-vacio-mini">No has bloqueado a nadie.</p>
+  {% endfor %}
+</section>
+{% endblock %}

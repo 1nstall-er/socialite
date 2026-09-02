@@ -1,9 +1,9 @@
 """Consultas optimizadas y reutilizables para las rutas de Socialite."""
 
-from sqlalchemy import or_, select
+from sqlalchemy import exists, or_, select
 from sqlalchemy.orm import joinedload, selectinload
 
-from models import Conexion, Curso, Grupo, PerfilUPC, Usuario, db
+from models import Bloqueo, Conexion, Curso, Grupo, PerfilUPC, Usuario, db
 
 
 def _opciones_matching_usuario():
@@ -76,7 +76,18 @@ def candidatos_para(usuario_id, busqueda="", curso_id=None):
     """
     sentencia = (
         select(Usuario)
-        .where(Usuario.id != usuario_id)
+        .where(
+            Usuario.id != usuario_id,
+            Usuario.correo_verificado_en.is_not(None),
+            ~exists().where(
+                or_(
+                    (Bloqueo.bloqueador_id == usuario_id)
+                    & (Bloqueo.bloqueado_id == Usuario.id),
+                    (Bloqueo.bloqueado_id == usuario_id)
+                    & (Bloqueo.bloqueador_id == Usuario.id),
+                )
+            ),
+        )
         .options(*_opciones_matching_usuario())
     )
     if busqueda:
@@ -192,3 +203,25 @@ def conexiones_con_candidatos(usuario_id, candidatos_ids):
         )
         resultado[otro_id] = conexion
     return resultado
+
+
+def hay_bloqueo_entre(usuario_a_id, usuario_b_id):
+    sentencia = select(Bloqueo.id).where(
+        or_(
+            (Bloqueo.bloqueador_id == usuario_a_id)
+            & (Bloqueo.bloqueado_id == usuario_b_id),
+            (Bloqueo.bloqueador_id == usuario_b_id)
+            & (Bloqueo.bloqueado_id == usuario_a_id),
+        )
+    )
+    return db.session.execute(sentencia).scalar_one_or_none() is not None
+
+
+def bloqueos_emitidos_de(usuario_id):
+    sentencia = (
+        select(Bloqueo)
+        .where(Bloqueo.bloqueador_id == usuario_id)
+        .options(joinedload(Bloqueo.bloqueado))
+        .order_by(Bloqueo.creado_en.desc(), Bloqueo.id.desc())
+    )
+    return db.session.execute(sentencia).scalars().all()

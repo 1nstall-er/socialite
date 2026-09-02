@@ -20,10 +20,13 @@ from flask import (
     session,
     url_for,
 )
+from flask_migrate import Migrate
 from jinja2 import TemplateNotFound
+from sqlalchemy import inspect
 from sqlalchemy.exc import IntegrityError
 
 from auth import es_correo_institucional
+from mailer import enviar_codigo_verificacion
 from matching import (
     calcular_afinidad,
     calcular_afinidad_grupo,
@@ -32,25 +35,28 @@ from matching import (
 )
 from media import eliminar_avatar, guardar_avatar
 from models import (
+    Bloqueo,
     CampusUPC,
     CarreraUPC,
     Conexion,
     Curso,
     EspacioUPC,
+    EstadoReporte,
     EstiloEstudio,
     FacultadUPC,
     Grupo,
     Horario,
     MetaCursoUPC,
     ModalidadUPC,
+    MotivoReporte,
     ObjetivoSocialite,
     ParticipacionUPC,
     PerfilUPC,
+    Reporte,
     RolActividadUPC,
     RolCursoUPC,
     TipoActividadUPC,
     Usuario,
-    asegurar_columnas_usuario,
     ciclos_para_carrera,
     convertir_enum,
     db,
@@ -68,20 +74,31 @@ from presenters import (
     usuario_contexto,
 )
 from queries import (
+    bloqueos_emitidos_de,
     candidatos_para,
     conexion_entre,
     conexiones_con_candidatos,
     conexiones_de,
     grupos_de_usuario,
     grupos_filtrados,
+    hay_bloqueo_entre,
     obtener_grupo,
     usuario_para_matching,
+)
+from verification import (
+    MAX_INTENTOS,
+    ResultadoVerificacion,
+    completar_verificacion,
+    preparar_reto,
+    segundos_para_reenviar,
+    validar_codigo,
 )
 
 TIPOS_GRUPO = ("estudio", "social")
 DIAS = ("Lunes", "Martes", "Miercoles", "Jueves", "Viernes", "Sabado")
 PASSWORD_MINIMO = 10
 MAXIMO_POR_PAGINA = 48
+migrate = Migrate(compare_type=True, render_as_batch=True)
 
 
 def _minutos(hora):
@@ -187,7 +204,21 @@ def create_app(test_config=None):
         AVATAR_UPLOAD_FOLDER=os.getenv(
             "AVATAR_UPLOAD_FOLDER", str(Path(app.instance_path) / "avatares")
         ),
-        SYNC_UPC_CATALOG=True,
+        AUTO_CREATE_SCHEMA=os.getenv("AUTO_CREATE_SCHEMA", "0") == "1",
+        SYNC_UPC_CATALOG=os.getenv("SYNC_UPC_CATALOG", "1") == "1",
+        EMAIL_VERIFICATION_REQUIRED=os.getenv("EMAIL_VERIFICATION_REQUIRED", "1")
+        == "1",
+        MAIL_BACKEND=os.getenv("MAIL_BACKEND", "console"),
+        MAIL_SERVER=os.getenv("MAIL_SERVER", "localhost"),
+        MAIL_PORT=int(os.getenv("MAIL_PORT", "587")),
+        MAIL_USE_TLS=os.getenv("MAIL_USE_TLS", "1") == "1",
+        MAIL_USE_SSL=os.getenv("MAIL_USE_SSL", "0") == "1",
+        MAIL_USERNAME=os.getenv("MAIL_USERNAME"),
+        MAIL_PASSWORD=os.getenv("MAIL_PASSWORD"),
+        MAIL_DEFAULT_SENDER=os.getenv(
+            "MAIL_DEFAULT_SENDER", "Socialite <no-reply@socialite.local>"
+        ),
+        MAIL_TIMEOUT=int(os.getenv("MAIL_TIMEOUT", "10")),
     )
     if test_config:
         app.config.update(test_config)
@@ -196,22 +227,59 @@ def create_app(test_config=None):
         and app.config["SECRET_KEY"] == "clave-local-socialite"
     ):
         raise RuntimeError("SECRET_KEY es obligatoria en produccion")
+    if (
+        os.getenv("APP_ENV") == "production"
+        and str(app.config["MAIL_BACKEND"]).lower() != "smtp"
+    ):
+        raise RuntimeError("MAIL_BACKEND=smtp es obligatorio en produccion")
 
     logging.basicConfig(
         level=logging.INFO,
         format="%(asctime)s %(levelname)s %(name)s: %(message)s",
     )
     db.init_app(app)
+    migrate.init_app(app, db)
     with app.app_context():
-        db.create_all()
-        asegurar_columnas_usuario()
-        if app.config["SYNC_UPC_CATALOG"]:
+        if app.config["TESTING"] or app.config["AUTO_CREATE_SCHEMA"]:
+            db.create_all()
+        tablas = set(inspect(db.engine).get_table_names())
+        if app.config["SYNC_UPC_CATALOG"] and {
+            "espacios_upc",
+            "carreras_upc",
+        }.issubset(tablas):
             sincronizar_catalogo_upc()
 
     @app.before_request
     def cargar_usuario():
         usuario_id = session.get("usuario_id")
         g.usuario = db.session.get(Usuario, usuario_id) if usuario_id else None
+        if (
+            g.usuario is not None
+            and app.config["EMAIL_VERIFICATION_REQUIRED"]
+            and not g.usuario.correo_verificado
+        ):
+            session.pop("usuario_id", None)
+            session["verificacion_usuario_id"] = g.usuario.id
+            g.usuario = None
+
+    def emitir_codigo_verificacion(usuario, respetar_espera=True):
+        espera = segundos_para_reenviar(usuario)
+        if respetar_espera and espera:
+            return False, espera
+        codigo = preparar_reto(usuario, app.config["SECRET_KEY"])
+        try:
+            enviar_codigo_verificacion(
+                app, usuario.correo_institucional, usuario.nombre, codigo
+            )
+            db.session.commit()
+        except Exception:
+            db.session.rollback()
+            app.logger.exception(
+                "No se pudo enviar la verificación a %s",
+                usuario.correo_institucional,
+            )
+            return False, 0
+        return True, 0
 
     def csrf_token():
         if "_csrf_token" not in session:
@@ -457,6 +525,8 @@ def create_app(test_config=None):
                         intereses=", ".join(intereses) or None,
                     )
                     usuario.set_password(password)
+                    if not app.config["EMAIL_VERIFICATION_REQUIRED"]:
+                        completar_verificacion(usuario)
                     db.session.add(usuario)
                     db.session.commit()
                 except ValueError as error:
@@ -470,8 +540,28 @@ def create_app(test_config=None):
                 else:
                     session.clear()
                     session.permanent = True
+                    if app.config["EMAIL_VERIFICATION_REQUIRED"]:
+                        session["verificacion_usuario_id"] = usuario.id
+                        enviado, _espera = emitir_codigo_verificacion(
+                            usuario, respetar_espera=False
+                        )
+                        if enviado:
+                            flash(
+                                "Te enviamos un código de 6 dígitos a tu correo UPC.",
+                                "success",
+                            )
+                        else:
+                            flash(
+                                "Tu cuenta fue creada, pero el correo no pudo enviarse. "
+                                "Intenta reenviarlo.",
+                                "error",
+                            )
+                        return redirect(url_for("verificar_correo"))
                     session["usuario_id"] = usuario.id
-                    flash("Tu cuenta esta lista. Completa tus cursos y horarios.", "success")
+                    flash(
+                        "Tu cuenta esta lista. Completa tus cursos y horarios.",
+                        "success",
+                    )
                     return redirect(url_for("perfil"))
         return render_template(
             "registro.html", catalogo_upc=contexto_catalogo_upc()
@@ -496,6 +586,15 @@ def create_app(test_config=None):
                     session["intentos_login"] = 0
                     session["bloqueo_login_hasta"] = time.time() + 60
                 flash("Correo o contrasena incorrectos.", "error")
+            elif (
+                app.config["EMAIL_VERIFICATION_REQUIRED"]
+                and not usuario.correo_verificado
+            ):
+                session.clear()
+                session.permanent = True
+                session["verificacion_usuario_id"] = usuario.id
+                flash("Confirma tu correo UPC antes de ingresar.", "info")
+                return redirect(url_for("verificar_correo"))
             else:
                 session.clear()
                 session.permanent = True
@@ -505,6 +604,74 @@ def create_app(test_config=None):
                     _destino_seguro(request.args.get("siguiente"), url_for("index"))
                 )
         return render_template("ingresar.html")
+
+    @app.route("/verificar-correo", methods=["GET", "POST"])
+    def verificar_correo():
+        if g.usuario:
+            return redirect(url_for("index"))
+        usuario_id = session.get("verificacion_usuario_id")
+        usuario = db.session.get(Usuario, usuario_id) if usuario_id else None
+        if usuario is None:
+            flash("Ingresa con tu cuenta para continuar la verificación.", "info")
+            return redirect(url_for("ingresar"))
+        if usuario.correo_verificado:
+            session.clear()
+            session.permanent = True
+            session["usuario_id"] = usuario.id
+            return redirect(url_for("perfil"))
+
+        if request.method == "POST":
+            resultado = validar_codigo(
+                usuario,
+                app.config["SECRET_KEY"],
+                request.form.get("codigo", ""),
+            )
+            if resultado == ResultadoVerificacion.VALIDO:
+                completar_verificacion(usuario)
+                db.session.commit()
+                session.clear()
+                session.permanent = True
+                session["usuario_id"] = usuario.id
+                flash("Correo UPC verificado. Tu cuenta ya está activa.", "success")
+                return redirect(url_for("perfil"))
+
+            db.session.commit()
+            if resultado == ResultadoVerificacion.INVALIDO:
+                restantes = max(MAX_INTENTOS - usuario.verificacion_intentos, 0)
+                flash(
+                    f"El código no coincide. Te quedan {restantes} intento(s).",
+                    "error",
+                )
+            elif resultado == ResultadoVerificacion.AGOTADO:
+                flash(
+                    "Agotaste los intentos. Solicita un código nuevo para continuar.",
+                    "error",
+                )
+            else:
+                flash("El código venció. Solicita uno nuevo.", "error")
+
+        return render_template(
+            "verificar_correo.html",
+            correo=usuario.correo_institucional,
+            segundos_reenvio=segundos_para_reenviar(usuario),
+            intentos_restantes=max(MAX_INTENTOS - usuario.verificacion_intentos, 0),
+            correo_en_consola=str(app.config["MAIL_BACKEND"]).lower() == "console",
+        )
+
+    @app.post("/verificar-correo/reenviar")
+    def reenviar_codigo():
+        usuario_id = session.get("verificacion_usuario_id")
+        usuario = db.session.get(Usuario, usuario_id) if usuario_id else None
+        if usuario is None or usuario.correo_verificado:
+            return redirect(url_for("ingresar"))
+        enviado, espera = emitir_codigo_verificacion(usuario)
+        if enviado:
+            flash("Enviamos un código nuevo. El anterior dejó de funcionar.", "success")
+        elif espera:
+            flash(f"Espera {espera} segundos antes de pedir otro código.", "info")
+        else:
+            flash("No pudimos enviar el código. Intenta nuevamente en un momento.", "error")
+        return redirect(url_for("verificar_correo"))
 
     @app.post("/salir")
     def salir():
@@ -838,6 +1005,8 @@ def create_app(test_config=None):
         usuario = db.get_or_404(Usuario, usuario_id)
         if usuario.id == g.usuario.id:
             return redirect(url_for("perfil"))
+        if hay_bloqueo_entre(g.usuario.id, usuario.id):
+            abort(404)
         conexion = conexion_entre(g.usuario.id, usuario.id)
         incluir_email = bool(conexion and conexion.estado == "aceptada")
         contrato = {
@@ -1045,12 +1214,147 @@ def create_app(test_config=None):
         }
         return renderizar_contrato("conexiones.html", contrato, **contrato)
 
+    @app.get("/seguridad")
+    @login_required
+    def seguridad():
+        bloqueos = bloqueos_emitidos_de(g.usuario.id)
+        contrato = {
+            "bloqueados": [
+                {
+                    "id": bloqueo.id,
+                    "creado_en": bloqueo.creado_en.isoformat(),
+                    "persona": usuario_contexto(bloqueo.bloqueado),
+                }
+                for bloqueo in bloqueos
+            ]
+        }
+        return renderizar_contrato(
+            "seguridad.html",
+            contrato,
+            bloqueos=bloqueos,
+        )
+
+    @app.get("/personas/<int:usuario_id>/seguridad")
+    @login_required
+    def seguridad_persona(usuario_id):
+        usuario = db.get_or_404(Usuario, usuario_id)
+        if usuario.id == g.usuario.id:
+            abort(400, description="No puedes reportarte o bloquearte.")
+        bloqueo = Bloqueo.query.filter_by(
+            bloqueador_id=g.usuario.id, bloqueado_id=usuario.id
+        ).one_or_none()
+        contrato = {
+            "persona": usuario_contexto(usuario),
+            "bloqueado": bloqueo is not None,
+            "motivos": [
+                {"valor": motivo.value, "etiqueta": motivo.etiqueta}
+                for motivo in MotivoReporte
+            ],
+        }
+        return renderizar_contrato(
+            "seguridad_persona.html",
+            contrato,
+            persona=contrato["persona"],
+            bloqueo=bloqueo,
+            motivos=contrato["motivos"],
+        )
+
+    @app.post("/personas/<int:usuario_id>/bloquear")
+    @login_required
+    def bloquear_persona(usuario_id):
+        usuario = db.get_or_404(Usuario, usuario_id)
+        if usuario.id == g.usuario.id:
+            abort(400, description="No puedes bloquearte.")
+        existente = Bloqueo.query.filter_by(
+            bloqueador_id=g.usuario.id, bloqueado_id=usuario.id
+        ).one_or_none()
+        if existente is None:
+            try:
+                db.session.add(Bloqueo(bloqueador=g.usuario, bloqueado=usuario))
+                conexiones_existentes = Conexion.query.filter(
+                    (
+                        (Conexion.remitente_id == g.usuario.id)
+                        & (Conexion.destinatario_id == usuario.id)
+                    )
+                    | (
+                        (Conexion.remitente_id == usuario.id)
+                        & (Conexion.destinatario_id == g.usuario.id)
+                    )
+                ).all()
+                for conexion in conexiones_existentes:
+                    db.session.delete(conexion)
+                db.session.commit()
+                flash(
+                    f"Bloqueaste a {usuario.nombre}. "
+                    "Ya no podrán conectar ni aparecerse en el matching.",
+                    "success",
+                )
+            except IntegrityError:
+                db.session.rollback()
+                flash("Esta persona ya está bloqueada.", "info")
+        else:
+            flash("Esta persona ya está bloqueada.", "info")
+        return redirect(url_for("seguridad"))
+
+    @app.post("/bloqueos/<int:bloqueo_id>/eliminar")
+    @login_required
+    def desbloquear_persona(bloqueo_id):
+        bloqueo = db.get_or_404(Bloqueo, bloqueo_id)
+        if bloqueo.bloqueador_id != g.usuario.id:
+            abort(403)
+        nombre = bloqueo.bloqueado.nombre
+        db.session.delete(bloqueo)
+        db.session.commit()
+        flash(f"Desbloqueaste a {nombre}.", "info")
+        return redirect(url_for("seguridad"))
+
+    @app.post("/personas/<int:usuario_id>/reportar")
+    @login_required
+    def reportar_persona(usuario_id):
+        usuario = db.get_or_404(Usuario, usuario_id)
+        if usuario.id == g.usuario.id:
+            abort(400, description="No puedes reportarte.")
+        try:
+            motivo = convertir_enum(MotivoReporte, request.form.get("motivo"))
+            if motivo is None:
+                raise ValueError("Selecciona un motivo para el reporte.")
+            detalle = request.form.get("detalle", "").strip()
+            abierto = Reporte.query.filter(
+                Reporte.denunciante_id == g.usuario.id,
+                Reporte.reportado_id == usuario.id,
+                Reporte.estado.in_(
+                    [EstadoReporte.PENDIENTE, EstadoReporte.EN_REVISION]
+                ),
+            ).first()
+            if abierto:
+                flash("Ya tienes un reporte de esta persona en revisión.", "info")
+            else:
+                db.session.add(
+                    Reporte(
+                        denunciante=g.usuario,
+                        reportado=usuario,
+                        motivo=motivo,
+                        detalle=detalle or None,
+                    )
+                )
+                db.session.commit()
+                flash(
+                    "Recibimos tu reporte de forma privada. Gracias por cuidar la comunidad.",
+                    "success",
+                )
+        except ValueError as error:
+            db.session.rollback()
+            flash(str(error), "error")
+        return redirect(url_for("seguridad_persona", usuario_id=usuario.id))
+
     @app.post("/companeros/<int:usuario_id>/conectar")
     @login_required
     def solicitar_conexion(usuario_id):
         usuario = db.get_or_404(Usuario, usuario_id)
         if usuario.id == g.usuario.id:
             abort(400, description="No puedes conectarte contigo mismo.")
+        if hay_bloqueo_entre(g.usuario.id, usuario.id):
+            abort(403, description="No es posible conectar con esta persona.")
         conexion = conexion_entre(g.usuario.id, usuario.id)
         if conexion is None:
             conexion = Conexion(

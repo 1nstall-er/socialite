@@ -14,6 +14,8 @@ plantilla indicada, Flask le entregara exactamente el mismo contrato.
 - Las colecciones paginadas usan `pagina`, `por_pagina`, `total`, `paginas`,
   `tiene_anterior` y `tiene_siguiente`.
 - Los POST requieren un campo oculto `csrf_token` con `{{ csrf_token() }}`.
+- Los usuarios sin correo verificado no reciben una sesión autenticada ni
+  aparecen en el matching.
 
 ## `GET /panel` → `panel.html`
 
@@ -108,6 +110,17 @@ Todos los POST deben incluir `csrf_token`.
 el multiselect se envía un campo `intereses` por opción seleccionada; el backend
 admite además una cadena separada por comas durante la transición del frontend.
 
+Después del registro, el backend redirige a `GET /verificar-correo` y entrega a
+`verificar_correo.html`:
+
+- `correo`: dirección UPC pendiente.
+- `intentos_restantes`: intentos antes de exigir un código nuevo.
+- `segundos_reenvio`: espera restante para solicitar otro código.
+- `correo_en_consola`: `true` únicamente con el backend local de desarrollo.
+
+El formulario de código envía POST a `/verificar-correo`; el reenvío usa POST a
+`/verificar-correo/reenviar`. Ambos requieren CSRF.
+
 ## `GET /personas/<id>` → `persona.html`
 
 - `persona`: perfil publico y, si corresponde, correo institucional.
@@ -161,6 +174,26 @@ Acciones POST disponibles:
 - `/conexiones/<conexion_id>/aceptar`
 - `/conexiones/<conexion_id>/rechazar`
 - `/conexiones/<conexion_id>/cancelar`
+
+## Seguridad y moderación
+
+`GET /personas/<id>/seguridad` → `seguridad_persona.html` entrega:
+
+- `persona`: perfil público mínimo.
+- `bloqueado`: si el usuario actual ya lo bloqueó.
+- `motivos[]`: `valor` y `etiqueta` controlados para el reporte.
+
+Acciones POST:
+
+- `/personas/<usuario_id>/reportar`: `motivo` y `detalle` opcional de hasta 500
+  caracteres. No duplica reportes que siguen pendientes o en revisión.
+- `/personas/<usuario_id>/bloquear`: elimina cualquier conexión previa y oculta
+  a ambos usuarios mutuamente.
+- `/bloqueos/<bloqueo_id>/eliminar`: revierte solo un bloqueo creado por el
+  usuario autenticado.
+
+`GET /seguridad` → `seguridad.html` recibe `bloqueos` como modelos para la vista
+y `contrato.bloqueados[]` serializable para la futura fusión del frontend.
 
 ## Codigos y seguridad
 

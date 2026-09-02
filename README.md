@@ -5,7 +5,8 @@ companeros y creen grupos dentro del campus. El MVP esta enfocado en la UPC.
 
 ## Funciones disponibles
 
-- Registro restringido al correo institucional `@upc.edu.pe`.
+- Registro restringido al correo institucional `@upc.edu.pe`, con código de
+  verificación de un solo uso, caducidad, límite de intentos y reenvío protegido.
 - Foto obligatoria procesada por el servidor: valida el contenido, corrige la
   orientación, elimina metadatos y genera un avatar cuadrado optimizado.
 - Ingreso con contrasena almacenada de forma segura.
@@ -25,6 +26,10 @@ companeros y creen grupos dentro del campus. El MVP esta enfocado en la UPC.
 - Interfaz adaptable a computadoras y celulares.
 - Búsqueda y filtros de compañeros, solicitudes de conexión accionables y una
   pantalla para administrar contactos.
+- Bloqueo bidireccional efectivo sobre matching y conexiones, reportes privados
+  con motivos controlados y estado de revisión.
+- Migraciones versionadas con Alembic/Flask-Migrate para evolucionar la base sin
+  borrar datos.
 
 ## Stack
 
@@ -44,6 +49,9 @@ companeros y creen grupos dentro del campus. El MVP esta enfocado en la UPC.
 - `presenters.py`: contratos serializables para Jinja2 y JSON.
 - `models.py`: entidades y relaciones persistentes.
 - `media.py`: validación, normalización y almacenamiento privado de avatares.
+- `verification.py`: reto criptográfico, expiración, intentos y reenvío.
+- `mailer.py`: entrega transaccional por SMTP, consola local o memoria de prueba.
+- `migrations/`: historial reproducible de cambios de esquema.
 
 Los contratos que debe consumir el frontend estan documentados en
 `docs/JINJA_CONTEXT.md`. Las rutas nuevas sin template responden JSON hasta que
@@ -60,10 +68,28 @@ cd socialite
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
 pip install -r requirements.txt
+python -m flask --app app:create_app db upgrade
 python app.py
 ```
 
 La aplicacion queda disponible en `http://127.0.0.1:5000`.
+
+En desarrollo, `MAIL_BACKEND=console` imprime el código de verificación en la
+terminal donde corre Flask. Para enviar correos reales, copia `.env.example` a
+`.env`, configura `MAIL_BACKEND=smtp` y completa las variables `MAIL_*` con tu
+proveedor. En producción el backend SMTP y una `SECRET_KEY` propia son
+obligatorios.
+
+Si ya tenías una base creada antes de incorporar Alembic, márcala una sola vez
+con la revisión base y aplica el resto:
+
+```powershell
+python -m flask --app app:create_app db stamp 54cf41b8962b
+python -m flask --app app:create_app db upgrade
+```
+
+Las cuentas existentes quedan marcadas como verificadas durante esa migración;
+las nuevas deben confirmar el código recibido.
 
 Para produccion, configura las variables `SECRET_KEY`, `DATABASE_URL` y,
 opcionalmente, `AVATAR_UPLOAD_FOLDER`. Por defecto las fotos viven en
@@ -95,6 +121,7 @@ resultado visible.
 
 ## Alcance pendiente
 
-El MVP todavia no envia un codigo real de verificacion al correo, no incluye
-chat en tiempo real y no tiene una app nativa. La coordinacion ocurre dentro
-del campus y el contacto posterior se mantiene fuera de la app.
+El envío SMTP ya está listo, pero necesita las credenciales del proveedor de
+correo del despliegue. El MVP todavía no incluye chat en tiempo real ni una app
+nativa. La coordinación ocurre dentro del campus y el contacto posterior se
+mantiene fuera de la app.

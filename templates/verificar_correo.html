@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+
+{% block title %}Verifica tu correo — Socialite{% endblock %}
+
+{% block content %}
+<div class="pagina-auth pagina-auth-compacta">
+  <div class="auth-intro">
+    <span class="eyebrow">Un último paso</span>
+    <h1>Demuestra que eres UPC.</h1>
+    <p>La verificación institucional mantiene la comunidad cerrada a estudiantes reales.</p>
+  </div>
+  <section class="tarjeta formulario-tarjeta verificacion-tarjeta">
+    <h2>Revisa tu correo</h2>
+    <p>Enviamos un código de 6 dígitos a <strong>{{ correo }}</strong>. Vence en 15 minutos.</p>
+    <form method="post" action="{{ url_for('verificar_correo') }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <div class="campo">
+        <label for="codigo">Código de verificación</label>
+        <input class="codigo-verificacion" type="text" id="codigo" name="codigo" inputmode="numeric" autocomplete="one-time-code" minlength="6" maxlength="6" pattern="[0-9]{6}" placeholder="000000" autofocus required>
+        <small>{{ intentos_restantes }} intento{% if intentos_restantes != 1 %}s{% endif %} disponible{% if intentos_restantes != 1 %}s{% endif %}.</small>
+      </div>
+      <button class="boton boton-ancho" type="submit">Verificar y entrar</button>
+    </form>
+    <form class="formulario-reenvio" method="post" action="{{ url_for('reenviar_codigo') }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <button class="enlace-boton" type="submit">Enviar un código nuevo</button>
+      {% if segundos_reenvio %}<small>Disponible en aproximadamente {{ segundos_reenvio }} segundos.</small>{% endif %}
+    </form>
+    {% if correo_en_consola %}<p class="texto-suave texto-centro">En desarrollo, el código aparece en la terminal donde ejecutaste Flask.</p>{% endif %}
+  </section>
+</div>
+{% endblock %}

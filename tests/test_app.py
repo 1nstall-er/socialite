@@ -13,11 +13,13 @@ from matching import (
     rankear_candidatos_paginado,
 )
 from models import (
+    Bloqueo,
     CampusUPC,
     CarreraUPC,
     Conexion,
     Curso,
     EspacioUPC,
+    EstadoReporte,
     EstiloEstudio,
     FacultadUPC,
     Grupo,
@@ -26,6 +28,7 @@ from models import (
     ObjetivoSocialite,
     ParticipacionUPC,
     PerfilUPC,
+    Reporte,
     RolActividadUPC,
     RolCursoUPC,
     TipoActividadUPC,
@@ -33,6 +36,7 @@ from models import (
     db,
     sincronizar_catalogo_upc,
 )
+from verification import completar_verificacion
 
 
 class SocialiteTestCase(unittest.TestCase):
@@ -45,6 +49,8 @@ class SocialiteTestCase(unittest.TestCase):
                 "SQLALCHEMY_DATABASE_URI": "sqlite:///:memory:",
                 "CSRF_ENABLED": False,
                 "AVATAR_UPLOAD_FOLDER": self.directorio_temporal.name,
+                "EMAIL_VERIFICATION_REQUIRED": False,
+                "MAIL_BACKEND": "memory",
             }
         )
         self.client = self.app.test_client()
@@ -90,6 +96,38 @@ class SocialiteTestCase(unittest.TestCase):
             usuario = Usuario.query.one()
             self.assertNotEqual(usuario.password_hash, "segura1234")
             self.assertTrue(usuario.check_password("segura1234"))
+
+    def test_verificacion_de_correo_activa_la_cuenta_con_codigo_de_un_solo_uso(self):
+        self.app.config["EMAIL_VERIFICATION_REQUIRED"] = True
+        respuesta = self.registrar()
+        html = respuesta.get_data(as_text=True)
+        self.assertIn("Revisa tu correo", html)
+        self.assertIn("ana@upc.edu.pe", html)
+        with self.client.session_transaction() as sesion:
+            self.assertNotIn("usuario_id", sesion)
+            self.assertIn("verificacion_usuario_id", sesion)
+
+        codigo = self.app.extensions["mail_outbox"][-1]["codigo"]
+        with self.app.app_context():
+            usuario = Usuario.query.one()
+            self.assertFalse(usuario.correo_verificado)
+            self.assertNotEqual(usuario.verificacion_codigo_hash, codigo)
+
+        respuesta = self.client.post(
+            "/verificar-correo", data={"codigo": "111111"}, follow_redirects=True
+        )
+        self.assertIn("no coincide", respuesta.get_data(as_text=True))
+        respuesta = self.client.post(
+            "/verificar-correo", data={"codigo": codigo}, follow_redirects=True
+        )
+        self.assertIn("Correo UPC verificado", respuesta.get_data(as_text=True))
+        with self.client.session_transaction() as sesion:
+            self.assertIn("usuario_id", sesion)
+            self.assertNotIn("verificacion_usuario_id", sesion)
+        with self.app.app_context():
+            usuario = Usuario.query.one()
+            self.assertTrue(usuario.correo_verificado)
+            self.assertIsNone(usuario.verificacion_codigo_hash)
 
     def test_registro_renderiza_catalogos_y_guarda_selectores(self):
         pagina = self.client.get("/registro").get_data(as_text=True)
@@ -292,6 +330,8 @@ class SocialiteTestCase(unittest.TestCase):
             )
             ana.set_password("segura1234")
             bruno.set_password("segura1234")
+            completar_verificacion(ana)
+            completar_verificacion(bruno)
             ana.cursos.append(curso)
             bruno.cursos.append(curso)
             ana.horarios.append(Horario(dia="Lunes", hora_inicio="10:00", hora_fin="12:00"))
@@ -452,6 +492,55 @@ class SocialiteTestCase(unittest.TestCase):
         self.assertIn("Mis contactos", conexiones.get_data(as_text=True))
         self.assertIn("bruno@upc.edu.pe", conexiones.get_data(as_text=True))
 
+    def test_bloqueo_corta_conexion_y_excluye_el_matching(self):
+        self.registrar()
+        with self.app.app_context():
+            ana_id = Usuario.query.filter_by(
+                correo_institucional="ana@upc.edu.pe"
+            ).one().id
+        self.client.post("/salir")
+        self.registrar(nombre="Bruno", correo="bruno@upc.edu.pe")
+        self.client.post(f"/companeros/{ana_id}/conectar")
+
+        respuesta = self.client.post(
+            f"/personas/{ana_id}/bloquear", follow_redirects=True
+        )
+        self.assertIn("Bloqueaste a Ana", respuesta.get_data(as_text=True))
+        with self.app.app_context():
+            self.assertEqual(Bloqueo.query.count(), 1)
+            self.assertEqual(Conexion.query.count(), 0)
+        self.assertEqual(
+            self.client.get("/api/v1/companeros").get_json()["paginacion"]["total"],
+            0,
+        )
+
+        with self.app.app_context():
+            bloqueo_id = Bloqueo.query.one().id
+        self.client.post(f"/bloqueos/{bloqueo_id}/eliminar")
+        self.assertEqual(
+            self.client.get("/api/v1/companeros").get_json()["paginacion"]["total"],
+            1,
+        )
+
+    def test_reporte_es_privado_validado_y_no_se_duplica_mientras_esta_abierto(self):
+        self.registrar()
+        with self.app.app_context():
+            ana_id = Usuario.query.one().id
+        self.client.post("/salir")
+        self.registrar(nombre="Bruno", correo="bruno@upc.edu.pe")
+
+        datos = {"motivo": "acoso", "detalle": "Mensajes insistentes"}
+        respuesta = self.client.post(
+            f"/personas/{ana_id}/reportar", data=datos, follow_redirects=True
+        )
+        self.assertIn("Recibimos tu reporte", respuesta.get_data(as_text=True))
+        self.client.post(f"/personas/{ana_id}/reportar", data=datos)
+        with self.app.app_context():
+            self.assertEqual(Reporte.query.count(), 1)
+            reporte = Reporte.query.one()
+            self.assertEqual(reporte.estado, EstadoReporte.PENDIENTE)
+            self.assertEqual(reporte.detalle, "Mensajes insistentes")
+
     def test_respuestas_incluyen_cabeceras_de_seguridad(self):
         respuesta = self.client.get("/")
         self.assertEqual(respuesta.headers["X-Frame-Options"], "DENY")
@@ -466,6 +555,7 @@ class SocialiteTestCase(unittest.TestCase):
                 intereses="tecnologia",
             )
             principal.set_password("segura1234")
+            completar_verificacion(principal)
             db.session.add(principal)
             for indice in range(12):
                 candidato = Usuario(
@@ -474,6 +564,7 @@ class SocialiteTestCase(unittest.TestCase):
                     intereses="tecnologia",
                 )
                 candidato.set_password("segura1234")
+                completar_verificacion(candidato)
                 candidato.horarios.append(
                     Horario(
                         dia="Lunes", hora_inicio="10:00", hora_fin="11:00"
@@ -714,6 +805,8 @@ class SocialiteTestCase(unittest.TestCase):
             )
             ana.set_password("segura1234")
             bruno.set_password("segura1234")
+            completar_verificacion(ana)
+            completar_verificacion(bruno)
             for usuario in (ana, bruno):
                 usuario.cursos.append(curso)
                 usuario.horarios.append(

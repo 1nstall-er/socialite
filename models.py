@@ -1,9 +1,4 @@
-"""Modelos de dominio de Socialite con contexto verificable de la UPC.
-
-Las extensiones UPC viven principalmente en tablas nuevas. Los campos aditivos del
-usuario se migran de forma idempotente para mantener compatible la base SQLite del
-MVP sin perder perfiles creados.
-"""
+"""Modelos de dominio de Socialite con contexto verificable de la UPC."""
 
 from __future__ import annotations
 
@@ -16,7 +11,6 @@ from typing import Final, Self, TypeVar
 from unicodedata import category, normalize
 
 from flask_sqlalchemy import SQLAlchemy
-from sqlalchemy import inspect, text
 from sqlalchemy.orm import validates
 from werkzeug.security import check_password_hash, generate_password_hash
 
@@ -132,6 +126,22 @@ class CategoriaInteresUPC(EnumEtiquetado):
     COMUNIDAD = ("comunidad", "Comunidad e impacto")
     PROFESIONAL = ("profesional", "Desarrollo profesional")
     BIENESTAR = ("bienestar", "Bienestar y estilo de vida")
+
+
+class MotivoReporte(EnumEtiquetado):
+    ACOSO = ("acoso", "Acoso o intimidación")
+    SPAM = ("spam", "Spam o publicidad")
+    IDENTIDAD_FALSA = ("identidad_falsa", "Identidad falsa")
+    CONTENIDO_INAPROPIADO = ("contenido_inapropiado", "Contenido inapropiado")
+    CONDUCTA_PELIGROSA = ("conducta_peligrosa", "Conducta peligrosa")
+    OTRO = ("otro", "Otro motivo")
+
+
+class EstadoReporte(EnumEtiquetado):
+    PENDIENTE = ("pendiente", "Pendiente")
+    EN_REVISION = ("en_revision", "En revisión")
+    RESUELTO = ("resuelto", "Resuelto")
+    DESCARTADO = ("descartado", "Descartado")
 
 
 @dataclass(frozen=True, slots=True)
@@ -553,6 +563,13 @@ class Usuario(db.Model):
     carrera = db.Column(db.String(80))
     ciclo = db.Column(db.Integer)
     intereses = db.Column(db.String(300))
+    correo_verificado_en = db.Column(db.DateTime, index=True)
+    verificacion_codigo_hash = db.Column(db.String(64))
+    verificacion_expira_en = db.Column(db.DateTime)
+    verificacion_enviada_en = db.Column(db.DateTime)
+    verificacion_intentos = db.Column(
+        db.Integer, nullable=False, default=0, server_default="0"
+    )
     cursos = db.relationship("Curso", secondary=inscripciones, back_populates="usuarios")
     solicitudes_enviadas = db.relationship(
         "Conexion", foreign_keys="Conexion.remitente_id", back_populates="remitente",
@@ -561,6 +578,29 @@ class Usuario(db.Model):
     solicitudes_recibidas = db.relationship(
         "Conexion", foreign_keys="Conexion.destinatario_id", back_populates="destinatario",
         cascade="all, delete-orphan",
+    )
+    bloqueos_emitidos = db.relationship(
+        "Bloqueo",
+        foreign_keys="Bloqueo.bloqueador_id",
+        back_populates="bloqueador",
+        cascade="all, delete-orphan",
+    )
+    bloqueos_recibidos = db.relationship(
+        "Bloqueo",
+        foreign_keys="Bloqueo.bloqueado_id",
+        back_populates="bloqueado",
+        cascade="all, delete-orphan",
+    )
+    reportes_emitidos = db.relationship(
+        "Reporte",
+        foreign_keys="Reporte.denunciante_id",
+        back_populates="denunciante",
+        cascade="all, delete-orphan",
+    )
+    reportes_recibidos = db.relationship(
+        "Reporte",
+        foreign_keys="Reporte.reportado_id",
+        back_populates="reportado",
     )
     perfil_upc = db.relationship(
         "PerfilUPC", back_populates="usuario", uselist=False,
@@ -579,6 +619,10 @@ class Usuario(db.Model):
 
     def check_password(self, password: str) -> bool:
         return check_password_hash(self.password_hash, password)
+
+    @property
+    def correo_verificado(self) -> bool:
+        return self.correo_verificado_en is not None
 
     @validates("biografia")
     def validar_biografia(self, _clave: str, valor: str | None) -> str | None:
@@ -644,29 +688,6 @@ class Usuario(db.Model):
             bool(self.perfil_upc and self.perfil_upc.campus),
         )
         return round(sum(secciones) / len(secciones) * 100)
-
-
-def asegurar_columnas_usuario() -> None:
-    """Añade campos opcionales nuevos sin invalidar la SQLite local existente.
-
-    El proyecto aún no incorpora Alembic. Esta migración aditiva conserva los
-    perfiles del MVP y es idempotente; una instalación nueva ya trae las columnas
-    desde ``create_all``.
-    """
-    inspector = inspect(db.engine)
-    if "usuarios" not in inspector.get_table_names():
-        return
-    existentes = {columna["name"] for columna in inspector.get_columns("usuarios")}
-    definiciones = {
-        "foto_archivo": "VARCHAR(160)",
-        "biografia": "VARCHAR(220)",
-    }
-    for nombre, tipo_sql in definiciones.items():
-        if nombre not in existentes:
-            db.session.execute(
-                text(f'ALTER TABLE usuarios ADD COLUMN "{nombre}" {tipo_sql}')
-            )
-    db.session.commit()
 
 
 class Curso(db.Model):
@@ -936,6 +957,90 @@ class Conexion(db.Model):
 
     def otra_persona(self, usuario: Usuario) -> Usuario:
         return self.destinatario if self.remitente_id == usuario.id else self.remitente
+
+
+class Bloqueo(db.Model):
+    """Corta de inmediato toda interacción entre dos cuentas."""
+
+    __tablename__ = "bloqueos"
+    __table_args__ = (
+        db.UniqueConstraint("bloqueador_id", "bloqueado_id", name="uq_bloqueo_directo"),
+        db.CheckConstraint(
+            "bloqueador_id != bloqueado_id", name="ck_bloqueo_usuarios_distintos"
+        ),
+    )
+
+    id = db.Column(db.Integer, primary_key=True)
+    bloqueador_id = db.Column(
+        db.Integer, db.ForeignKey("usuarios.id"), nullable=False, index=True
+    )
+    bloqueado_id = db.Column(
+        db.Integer, db.ForeignKey("usuarios.id"), nullable=False, index=True
+    )
+    creado_en = db.Column(
+        db.DateTime(timezone=True), nullable=False, default=lambda: datetime.now(UTC)
+    )
+
+    bloqueador = db.relationship(
+        "Usuario", foreign_keys=[bloqueador_id], back_populates="bloqueos_emitidos"
+    )
+    bloqueado = db.relationship(
+        "Usuario", foreign_keys=[bloqueado_id], back_populates="bloqueos_recibidos"
+    )
+
+
+class Reporte(db.Model):
+    """Denuncia privada para revisión; nunca se expone al usuario reportado."""
+
+    __tablename__ = "reportes"
+    __table_args__ = (
+        db.CheckConstraint(
+            "denunciante_id != reportado_id", name="ck_reporte_usuarios_distintos"
+        ),
+    )
+
+    id = db.Column(db.Integer, primary_key=True)
+    denunciante_id = db.Column(
+        db.Integer, db.ForeignKey("usuarios.id"), nullable=False, index=True
+    )
+    reportado_id = db.Column(
+        db.Integer, db.ForeignKey("usuarios.id"), nullable=False, index=True
+    )
+    motivo = db.Column(
+        _tipo_enum(MotivoReporte, "motivo_reporte"), nullable=False, index=True
+    )
+    detalle = db.Column(db.String(500))
+    estado = db.Column(
+        _tipo_enum(EstadoReporte, "estado_reporte"),
+        nullable=False,
+        default=EstadoReporte.PENDIENTE,
+        index=True,
+    )
+    creado_en = db.Column(
+        db.DateTime(timezone=True), nullable=False, default=lambda: datetime.now(UTC)
+    )
+    actualizado_en = db.Column(
+        db.DateTime(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(UTC),
+        onupdate=lambda: datetime.now(UTC),
+    )
+
+    denunciante = db.relationship(
+        "Usuario", foreign_keys=[denunciante_id], back_populates="reportes_emitidos"
+    )
+    reportado = db.relationship(
+        "Usuario", foreign_keys=[reportado_id], back_populates="reportes_recibidos"
+    )
+
+    @validates("detalle")
+    def validar_detalle(self, _clave: str, valor: str | None) -> str | None:
+        if valor is None:
+            return None
+        limpio = valor.strip()
+        if len(limpio) > 500:
+            raise ValueError("El detalle del reporte puede tener hasta 500 caracteres")
+        return limpio or None
 
 
 def sincronizar_catalogo_upc() -> int:

@@ -114,6 +114,7 @@
           {% else %}
             <span class="boton boton-desactivado boton-ancho">Solicitud enviada</span>
           {% endif %}
+          <a class="enlace-seguridad" href="{{ url_for('seguridad_persona', usuario_id=sugerencia.usuario.id) }}">Reportar o bloquear</a>
         </div>
       </article>
     {% endfor %}

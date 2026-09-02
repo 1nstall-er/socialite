@@ -24,6 +24,7 @@
 <a href="{{ url_for('companeros') }}">Compañeros</a>
 <a href="{{ url_for('conexiones') }}">Conexiones</a>
 <a href="{{ url_for('perfil') }}">Mi perfil</a>
+<a href="{{ url_for('seguridad') }}">Seguridad</a>
 <form class="form-inline" method="post" action="{{ url_for('salir') }}">
 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
 <button class="enlace-boton" type="submit">Salir</button>

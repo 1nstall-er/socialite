@@ -184,6 +184,7 @@ def usuario_contexto(
     if incluir_email:
         datos["correo_institucional"] = usuario.correo_institucional
     if incluir_privado:
+        datos["correo_verificado"] = usuario.correo_verificado
         datos["creditos_extraacademicos"] = {
             "confirmados": usuario.creditos_extraacademicos_confirmados,
             "requeridos": CREDITOS_EXTRAACADEMICOS_REQUERIDOS,
