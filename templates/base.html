@@ -1,51 +1,82 @@
 <!DOCTYPE html>
 <html lang="es">
-  <head>
-    <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <meta name="description" content="Socialite conecta estudiantes UPC para estudiar y conocer gente en el campus.">
-    <title>{% block title %}Socialite{% endblock %}</title>
-    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
-  </head>
-  <body>
-    <header class="topbar">
-      <div class="contenedor navegacion">
-        <a class="marca" href="{{ url_for('index') }}" aria-label="Socialite, inicio">
-          <span class="marca-icono">S</span>
-          <span>socialite</span>
-        </a>
-        <nav aria-label="Navegación principal">
-          <a href="{{ url_for('grupos') }}">Grupos</a>
-          {% if g.usuario %}
-            <a href="{{ url_for('companeros') }}">Compañeros</a>
-            <a href="{{ url_for('perfil') }}">Mi perfil</a>
-            <form class="form-inline" method="post" action="{{ url_for('salir') }}">
-              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-              <button class="enlace-boton" type="submit">Salir</button>
-            </form>
-          {% else %}
-            <a href="{{ url_for('ingresar') }}">Ingresar</a>
-            <a class="boton boton-pequeno" href="{{ url_for('registro') }}">Crear cuenta</a>
-          {% endif %}
-        </nav>
-      </div>
-    </header>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="description" content="Socialite conecta estudiantes UPC para estudiar y conocer gente en el campus.">
+<title>{% block title %}Socialite{% endblock %}</title>
+<link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+<header class="topbar">
+<div class="contenedor navegacion">
+<a class="marca" href="{{ url_for('index') }}" aria-label="Socialite, inicio">
+<span class="marca-icono">S</span>
+<span>socialite</span>
+</a>
+<button class="menu-boton" type="button" aria-expanded="false" aria-controls="menu-principal" aria-label="Abrir menú">
+<span class="menu-barras"></span>
+</button>
+<nav id="menu-principal" aria-label="Navegación principal">
+<a href="{{ url_for('grupos') }}">Grupos</a>
+{% if g.usuario %}
+<a href="{{ url_for('companeros') }}">Compañeros</a>
+<a href="{{ url_for('perfil') }}">Mi perfil</a>
+<form class="form-inline" method="post" action="{{ url_for('salir') }}">
+<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+<button class="enlace-boton" type="submit">Salir</button>
+</form>
+{% else %}
+<a href="{{ url_for('ingresar') }}">Ingresar</a>
+<a class="boton boton-pequeno" href="{{ url_for('registro') }}">Crear cuenta</a>
+{% endif %}
+</nav>
+</div>
+</header>
 
-    <main class="contenedor">
-      {% with mensajes = get_flashed_messages(with_categories=true) %}
-        {% if mensajes %}
-          <div class="mensajes" aria-live="polite">
-            {% for categoria, mensaje in mensajes %}
-              <div class="mensaje mensaje-{{ categoria }}">{{ mensaje }}</div>
-            {% endfor %}
-          </div>
-        {% endif %}
-      {% endwith %}
-      {% block content %}{% endblock %}
-    </main>
+<main class="contenedor">
+{% with mensajes = get_flashed_messages(with_categories=true) %}
+{% if mensajes %}
+<div class="mensajes" aria-live="polite">
+{% for categoria, mensaje in mensajes %}
+<div class="mensaje mensaje-{{ categoria }}">{{ mensaje }}</div>
+{% endfor %}
+</div>
+{% endif %}
+{% endwith %}
+{% block content %}{% endblock %}
+</main>
 
-    <footer class="pie">
-      <div class="contenedor">Hecho para conectar dentro del campus UPC.</div>
-    </footer>
-  </body>
+<footer class="pie">
+<div class="contenedor">Hecho para conectar dentro del campus UPC.</div>
+</footer>
+
+<script>
+(function () {
+  var boton = document.querySelector(".menu-boton");
+  var menu = document.getElementById("menu-principal");
+  if (!boton || !menu) return;
+
+  function cerrar() {
+    menu.classList.remove("abierto");
+    boton.setAttribute("aria-expanded", "false");
+    boton.setAttribute("aria-label", "Abrir menú");
+  }
+
+  boton.addEventListener("click", function () {
+    var abierto = menu.classList.toggle("abierto");
+    boton.setAttribute("aria-expanded", String(abierto));
+    boton.setAttribute("aria-label", abierto ? "Cerrar menú" : "Abrir menú");
+  });
+
+  menu.addEventListener("click", function (e) {
+    if (e.target.closest("a")) cerrar();
+  });
+
+  document.addEventListener("keydown", function (e) {
+    if (e.key === "Escape") cerrar();
+  });
+})();
+</script>
+</body>
 </html>
