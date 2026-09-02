@@ -1,3 +1,5 @@
+import click
+from flask_migrate import Migrate
 import logging
 import os
 import secrets
@@ -50,7 +52,6 @@ from models import (
     RolCursoUPC,
     TipoActividadUPC,
     Usuario,
-    asegurar_columnas_usuario,
     ciclos_para_carrera,
     convertir_enum,
     db,
@@ -78,6 +79,8 @@ from queries import (
     usuario_para_matching,
 )
 
+
+migrate = Migrate()
 
 TIPOS_GRUPO = ("estudio", "social")
 DIAS = ("Lunes", "Martes", "Miercoles", "Jueves", "Viernes", "Sabado")
@@ -203,11 +206,13 @@ def create_app(test_config=None):
         format="%(asctime)s %(levelname)s %(name)s: %(message)s",
     )
     db.init_app(app)
-    with app.app_context():
-        db.create_all()
-        asegurar_columnas_usuario()
-        if app.config["SYNC_UPC_CATALOG"]:
-            sincronizar_catalogo_upc()
+    migrate.init_app(app, db)
+
+    @app.cli.command("seed-upc")
+    def seed_upc():
+        """Crea o refresca el catalogo oficial UPC (idempotente)."""
+        creados = sincronizar_catalogo_upc()
+        click.echo(f"Catalogo UPC sincronizado ({creados} registros nuevos).")
 
     @app.before_request
     def cargar_usuario():
