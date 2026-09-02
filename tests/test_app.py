@@ -196,6 +196,16 @@ class SocialiteTestCase(unittest.TestCase):
         ajenos = [Horario(dia="Lunes", hora_inicio="11:00", hora_fin="12:00")]
         self.assertEqual(minutos_compartidos(propios, ajenos), 60)
 
+    def test_matching_sin_evidencia_no_inventa_probabilidad(self):
+        ana = Usuario(nombre="Ana", correo_institucional="ana@upc.edu.pe")
+        bruno = Usuario(nombre="Bruno", correo_institucional="bruno@upc.edu.pe")
+
+        resultado = calcular_afinidad(ana, bruno)
+
+        self.assertEqual(resultado["confianza"], 0)
+        self.assertIsNone(resultado["probabilidad_emparejamiento"])
+        self.assertEqual(resultado["componentes"], {})
+
     def test_matching_entrega_desglose_explicable(self):
         with self.app.app_context():
             curso = Curso(codigo="SW201", nombre="Programacion Web")
@@ -223,10 +233,22 @@ class SocialiteTestCase(unittest.TestCase):
             db.session.commit()
 
             resultado = calcular_afinidad(ana, bruno)
-            self.assertEqual(resultado["porcentaje"], 69)
+            self.assertEqual(resultado["porcentaje"], 70)
             self.assertEqual(resultado["horas"], 1.5)
             self.assertEqual(resultado["intereses"], ["fotografia"])
             self.assertEqual(set(resultado["componentes"]), {"cursos", "horarios", "intereses"})
+            self.assertEqual(
+                resultado["componentes"]["intereses"]["porcentaje_similitud"],
+                36.7,
+            )
+            self.assertEqual(resultado["probabilidad_emparejamiento"], 63.8)
+            self.assertFalse(
+                resultado["modelo_probabilidad"]["calibrada_con_datos_historicos"]
+            )
+            self.assertEqual(
+                resultado["intereses_detalle"]["porcentaje_jaccard_exacto"],
+                33.3,
+            )
 
     def test_api_companeros_expone_contrato_paginado(self):
         self.registrar()
@@ -244,6 +266,8 @@ class SocialiteTestCase(unittest.TestCase):
         self.assertEqual(datos["paginacion"]["por_pagina"], 1)
         self.assertEqual(datos["paginacion"]["total"], 1)
         self.assertIn("componentes", datos["resultados"][0])
+        self.assertIn("probabilidad_emparejamiento", datos["resultados"][0])
+        self.assertIn("modelo_probabilidad", datos["resultados"][0])
         self.assertNotIn("correo_institucional", datos["resultados"][0]["usuario"])
 
     def test_flujo_de_conexion_revela_email_solo_al_aceptar(self):
@@ -341,10 +365,33 @@ class SocialiteTestCase(unittest.TestCase):
         )
         self.assertEqual(len(catalogo["facultades"]), 13)
         self.assertEqual(len(catalogo["carreras"]), 59)
+        self.assertEqual(len(catalogo["ciclos"]), 14)
+        self.assertEqual(
+            sum(
+                len(grupo["carreras"])
+                for grupo in catalogo["carreras_por_facultad"]
+            ),
+            59,
+        )
         self.assertIn(
             "Ingeniería de Software",
             {carrera["nombre"] for carrera in catalogo["carreras"]},
         )
+        medicina = next(
+            carrera
+            for carrera in catalogo["carreras"]
+            if carrera["clave"] == "medicina"
+        )
+        software = next(
+            carrera
+            for carrera in catalogo["carreras"]
+            if carrera["clave"] == "ingenieria-de-software"
+        )
+        self.assertEqual(medicina["duracion_ciclos"], 14)
+        self.assertEqual(software["duracion_ciclos"], 10)
+        self.assertEqual(len(catalogo["intereses"]), 50)
+        self.assertEqual(len(catalogo["intereses_por_categoria"]), 7)
+        self.assertEqual(catalogo["limites"]["max_intereses"], 12)
         self.assertEqual(catalogo["viernes_cultural"]["hora_inicio"], "13:00")
         self.assertEqual(catalogo["creditos_extraacademicos_requeridos"], 4)
 
@@ -375,12 +422,14 @@ class SocialiteTestCase(unittest.TestCase):
                 "campus": "san_miguel",
                 "facultad": "ingenieria",
                 "carrera_upc_id": str(carrera_id),
+                "ciclo": "5",
                 "modalidad": "presencial",
                 "objetivo": "proyectos",
                 "estilo_estudio": "practico",
                 "viernes_cultural_disponible": "si",
                 "acepta_intercampus": "1",
                 "espacio_preferido_id": str(espacio_id),
+                "intereses": ["programacion", "musica"],
             },
             follow_redirects=True,
         )
@@ -403,6 +452,12 @@ class SocialiteTestCase(unittest.TestCase):
 
         contrato = self.client.get("/api/v1/perfil").get_json()["perfil"]
         self.assertEqual(contrato["perfil_upc"]["campus"], "san_miguel")
+        self.assertEqual(contrato["ciclo"], 5)
+        self.assertEqual(contrato["intereses"], ["Programación", "Música"])
+        self.assertEqual(
+            [item["clave"] for item in contrato["intereses_detalle"]],
+            ["programacion", "musica"],
+        )
         self.assertEqual(
             contrato["perfil_upc"]["carrera"]["nombre"],
             "Ingeniería de Software",
@@ -437,6 +492,49 @@ class SocialiteTestCase(unittest.TestCase):
                     rol=RolCursoUPC.REFORZAR,
                     prioridad=6,
                 )
+
+    def test_ciclos_dependen_de_la_carrera_e_intereses_son_controlados(self):
+        self.registrar()
+        with self.app.app_context():
+            medicina_id = CarreraUPC.query.filter_by(clave="medicina").one().id
+            software_id = CarreraUPC.query.filter_by(
+                clave="ingenieria-de-software"
+            ).one().id
+
+        respuesta = self.client.post(
+            "/perfil/upc",
+            data={
+                "campus": "villa",
+                "carrera_upc_id": str(medicina_id),
+                "ciclo": "14",
+                "intereses": ["investigacion", "voluntariado"],
+            },
+            follow_redirects=True,
+        )
+        self.assertIn("Contexto UPC actualizado", respuesta.get_data(as_text=True))
+
+        respuesta = self.client.post(
+            "/perfil/upc",
+            data={
+                "campus": "san_miguel",
+                "carrera_upc_id": str(software_id),
+                "ciclo": "11",
+            },
+            follow_redirects=True,
+        )
+        self.assertIn("entre 1 y 10", respuesta.get_data(as_text=True))
+
+        respuesta = self.client.post(
+            "/perfil",
+            data={
+                "nombre": "Ana",
+                "carrera_upc_id": str(software_id),
+                "ciclo": "5",
+                "intereses": ["interes inventado"],
+            },
+            follow_redirects=True,
+        )
+        self.assertIn("intereses del catálogo", respuesta.get_data(as_text=True))
 
     def test_matching_upc_activa_senales_contextuales_explicables(self):
         with self.app.app_context():

@@ -7,11 +7,16 @@ from typing import Any
 
 from models import (
     CAMPUS_UPC,
+    CICLOS_MEDICINA_UPC,
+    CICLOS_REGULARES_UPC,
     CREDITOS_EXTRAACADEMICOS_REQUERIDOS,
+    INTERESES_UPC,
+    MAX_INTERESES_USUARIO,
     VIERNES_CULTURAL_FIN,
     VIERNES_CULTURAL_INICIO,
     CampusUPC,
     CarreraUPC,
+    CategoriaInteresUPC,
     EspacioUPC,
     EstiloEstudio,
     FacultadUPC,
@@ -23,6 +28,8 @@ from models import (
     RolActividadUPC,
     RolCursoUPC,
     TipoActividadUPC,
+    ciclos_para_carrera,
+    duracion_ciclos_carrera,
 )
 
 
@@ -73,12 +80,15 @@ def espacio_upc_contexto(espacio: EspacioUPC | None) -> dict[str, Any] | None:
 def carrera_upc_contexto(carrera: CarreraUPC | None) -> dict[str, Any] | None:
     if carrera is None:
         return None
+    ciclos = ciclos_para_carrera(carrera.clave)
     return {
         "id": carrera.id,
         "clave": carrera.clave,
         "nombre": carrera.nombre,
         "facultad": carrera.facultad.value,
         "facultad_etiqueta": carrera.facultad.etiqueta,
+        "duracion_ciclos": len(ciclos),
+        "ciclos": [{"valor": ciclo, "etiqueta": f"Ciclo {ciclo}"} for ciclo in ciclos],
         "fuente_url": carrera.fuente_url,
         "verificado_en": carrera.verificado_en.isoformat(),
     }
@@ -154,6 +164,15 @@ def usuario_contexto(
         "carrera": usuario.carrera,
         "ciclo": usuario.ciclo,
         "intereses": usuario.lista_intereses,
+        "intereses_detalle": [
+            {
+                "clave": interes.clave,
+                "etiqueta": interes.etiqueta,
+                "categoria": interes.categoria.value,
+                "categoria_etiqueta": interes.categoria.etiqueta,
+            }
+            for interes in usuario.intereses_catalogados
+        ],
         "cursos": [curso_contexto(curso) for curso in usuario.cursos],
         "horarios": [horario_contexto(horario) for horario in usuario.horarios],
         "perfil_completo": usuario.perfil_completo,
@@ -178,10 +197,15 @@ def match_contexto(resultado: dict[str, Any]) -> dict[str, Any]:
         "score": resultado["score"],
         "porcentaje": resultado["porcentaje"],
         "confianza": resultado["confianza"],
+        "probabilidad_emparejamiento": resultado[
+            "probabilidad_emparejamiento"
+        ],
+        "modelo_probabilidad": resultado["modelo_probabilidad"],
         "cursos": [curso_contexto(curso) for curso in resultado["cursos"]],
         "horas": resultado["horas"],
         "minutos": resultado["minutos"],
         "intereses": resultado["intereses"],
+        "intereses_detalle": resultado["intereses_detalle"],
         "razones": resultado["razones"],
         "componentes": resultado["componentes"],
         "contexto_upc": resultado.get("contexto_upc", {}),
@@ -227,6 +251,18 @@ def conexion_contexto(conexion: Any, usuario_actual: Any) -> dict[str, Any]:
 def catalogo_upc_contexto(
     espacios: Iterable[EspacioUPC], carreras: Iterable[CarreraUPC]
 ) -> dict[str, Any]:
+    carreras_contexto = [
+        carrera_upc_contexto(carrera) for carrera in carreras
+    ]
+    intereses_contexto = [
+        {
+            "clave": interes.clave,
+            "etiqueta": interes.etiqueta,
+            "categoria": interes.categoria.value,
+            "categoria_etiqueta": interes.categoria.etiqueta,
+        }
+        for interes in INTERESES_UPC
+    ]
     return {
         "campus": [
             {
@@ -239,7 +275,41 @@ def catalogo_upc_contexto(
             for campus in CampusUPC
         ],
         "facultades": _opciones(FacultadUPC),
-        "carreras": [carrera_upc_contexto(carrera) for carrera in carreras],
+        "carreras": carreras_contexto,
+        "carreras_por_facultad": [
+            {
+                "facultad": facultad.value,
+                "facultad_etiqueta": facultad.etiqueta,
+                "carreras": [
+                    carrera
+                    for carrera in carreras_contexto
+                    if carrera and carrera["facultad"] == facultad.value
+                ],
+            }
+            for facultad in FacultadUPC
+        ],
+        "ciclos": [
+            {"valor": ciclo, "etiqueta": f"Ciclo {ciclo}"}
+            for ciclo in range(1, CICLOS_MEDICINA_UPC + 1)
+        ],
+        "duracion_ciclos": {
+            "regular": CICLOS_REGULARES_UPC,
+            "medicina": duracion_ciclos_carrera("medicina"),
+        },
+        "intereses": intereses_contexto,
+        "intereses_por_categoria": [
+            {
+                "categoria": categoria.value,
+                "categoria_etiqueta": categoria.etiqueta,
+                "intereses": [
+                    interes
+                    for interes in intereses_contexto
+                    if interes["categoria"] == categoria.value
+                ],
+            }
+            for categoria in CategoriaInteresUPC
+        ],
+        "limites": {"max_intereses": MAX_INTERESES_USUARIO},
         "modalidades": _opciones(ModalidadUPC),
         "objetivos": _opciones(ObjetivoSocialite),
         "estilos_estudio": _opciones(EstiloEstudio),

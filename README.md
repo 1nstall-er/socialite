@@ -14,6 +14,10 @@ companeros y creen grupos dentro del campus. El MVP esta enfocado en la UPC.
 - Matching contextual por campus, facultad, vida universitaria y metas por
   curso cuando ambos estudiantes completan esos datos.
 - Catalogo verificado de bibliotecas, cubiculos y espacios UPC.
+- Catalogos para seleccionar 59 carreras, ciclos validos por carrera y 50
+  intereses predefinidos agrupados por categoria.
+- Porcentaje por señal y probabilidad heuristica de emparejamiento ajustada por
+  la cobertura real del perfil.
 - Seguimiento de los cuatro creditos extraacademicos requeridos.
 - Interfaz adaptable a computadoras y celulares.
 

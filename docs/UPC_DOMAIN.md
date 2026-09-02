@@ -27,6 +27,8 @@ persistido conserva `fuente_url` y `verificado_en`.
   Culturales. La Semana Universitaria reúne facultades en deportes y retos.
 - La página de Transparencia presenta 13 facultades de pregrado y sus carreras.
   Las modalidades publicadas son presencial, semipresencial y a distancia.
+- Las carreras regulares consultadas publican una duración de 10 semestres.
+  Medicina es una excepción verificada: dura 14 semestres académicos.
 - Las mallas de Ingeniería Civil e Ingeniería de Software confirman cursos
   comunes como Matemática Básica y Cálculo I y publican una cadena formal de
   prerrequisitos.
@@ -67,6 +69,14 @@ contexto académico, estilo/objetivo, vida universitaria y metas por curso. Los
 pesos activos se normalizan a 100 %, los datos ausentes no penalizan y cada
 señal produce razones explicables para Jinja2.
 
+Los intereses utilizan una taxonomía de producto de 50 opciones agrupadas en
+siete categorías. La semejanza combina 80 % de Jaccard exacto y 20 % de
+Jaccard entre categorías. Cada resultado expone el porcentaje de cada señal y
+una comparación por interés. La probabilidad de emparejamiento se estima con
+`0.50 + (afinidad - 0.50) × cobertura`: reduce el exceso de certeza cuando el
+perfil está incompleto. Está marcada como no calibrada hasta contar con
+resultados históricos de invitaciones aceptadas y encuentros exitosos.
+
 ## Fuentes
 
 - Campus: https://upc.edu.pe/nosotros/campus/
@@ -81,4 +91,5 @@ señal produce razones explicables para Jinja2.
 - Mallas y facultades: https://upc.edu.pe/transparencia-upc/mallas-curriculares/
 - Ingeniería Civil: https://pregrado.upc.edu.pe/facultad-de-ingenieria/ingenieria-civil/malla-curricular/
 - Ingeniería de Software: https://pregrado.upc.edu.pe/carrera-de-ingenieria-de-software/malla-curricular/
+- Medicina (14 semestres): https://pregrado.upc.edu.pe/facultad-de-ciencias-de-la-salud/medicina/
 - Prerrequisitos: https://explora.upc.edu.pe/77753-permisos-pregrado/%C2%BFpuedo-pedir-permiso-para-llevar-cursos-que-no-cumplo-los-requisitos-

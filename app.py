@@ -47,9 +47,12 @@ from models import (
     RolCursoUPC,
     TipoActividadUPC,
     Usuario,
+    ciclos_para_carrera,
     convertir_enum,
     db,
+    normalizar_intereses_upc,
     sincronizar_catalogo_upc,
+    slugificar,
 )
 from presenters import (
     catalogo_upc_contexto,
@@ -97,14 +100,6 @@ def _horario_valido(dia, inicio, fin):
         return False
 
 
-def _intereses(texto):
-    return {
-        item.strip().lower()
-        for item in (texto or "").split(",")
-        if item.strip()
-    }
-
-
 def _password_valida(password):
     return (
         len(password) >= PASSWORD_MINIMO
@@ -136,6 +131,25 @@ def _booleano_opcional(valor):
     if normalizado in {"0", "false", "no", "off"}:
         return False
     raise ValueError("El valor booleano debe ser si o no")
+
+
+def _resolver_carrera_upc(carrera_id_texto, nombre):
+    """Resuelve ID o nombre legado contra el catálogo activo."""
+    carrera_id_texto = str(carrera_id_texto or "").strip()
+    nombre = str(nombre or "").strip()
+    if carrera_id_texto:
+        if not carrera_id_texto.isdigit():
+            raise ValueError("La carrera UPC seleccionada no es válida.")
+        carrera = db.session.get(CarreraUPC, int(carrera_id_texto))
+    elif nombre:
+        carrera = CarreraUPC.query.filter_by(
+            clave=slugificar(nombre), activa=True
+        ).one_or_none()
+    else:
+        return None
+    if carrera is None or not carrera.activa:
+        raise ValueError("Selecciona una carrera disponible del catálogo UPC.")
+    return carrera
 
 
 def _destino_seguro(valor, predeterminado):
@@ -346,18 +360,39 @@ def create_app(test_config=None):
             nombre = request.form.get("nombre", "").strip()
             correo = request.form.get("correo", "").strip().lower()
             password = request.form.get("password", "")
-            carrera = request.form.get("carrera", "").strip()
+            carrera_texto = request.form.get("carrera", "").strip()
+            error_carrera = None
+            try:
+                carrera_upc = _resolver_carrera_upc(
+                    request.form.get("carrera_upc_id"), carrera_texto
+                )
+            except ValueError as error:
+                carrera_upc = None
+                error_carrera = str(error)
+            carrera = carrera_upc.nombre if carrera_upc else carrera_texto
             ciclo = request.form.get("ciclo", "").strip()
             if not nombre or not correo or not password:
                 flash("Completa nombre, correo y contrasena.", "error")
             elif len(nombre) > 80 or len(carrera) > 80:
                 flash("Revisa la longitud de los datos ingresados.", "error")
+            elif error_carrera:
+                flash(error_carrera, "error")
+            elif ciclo and carrera_upc is None:
+                flash("Selecciona una carrera antes de indicar el ciclo.", "error")
             elif not es_correo_institucional(correo):
                 flash("Usa tu correo institucional (@upc.edu.pe).", "error")
             elif not _password_valida(password):
                 flash("Usa al menos 10 caracteres, con letras y numeros.", "error")
-            elif ciclo and (not ciclo.isdigit() or not 1 <= int(ciclo) <= 12):
-                flash("El ciclo debe estar entre 1 y 12.", "error")
+            elif ciclo and (
+                not ciclo.isdigit()
+                or int(ciclo) not in ciclos_para_carrera(
+                    carrera_upc.clave if carrera_upc else None
+                )
+            ):
+                limite = len(
+                    ciclos_para_carrera(carrera_upc.clave if carrera_upc else None)
+                )
+                flash(f"El ciclo debe estar entre 1 y {limite}.", "error")
             elif Usuario.query.filter_by(correo_institucional=correo).first():
                 flash("Ese correo ya esta registrado.", "error")
             else:
@@ -375,7 +410,9 @@ def create_app(test_config=None):
                 session["usuario_id"] = usuario.id
                 flash("Tu cuenta esta lista. Completa tus cursos y horarios.", "success")
                 return redirect(url_for("perfil"))
-        return render_template("registro.html")
+        return render_template(
+            "registro.html", catalogo_upc=contexto_catalogo_upc()
+        )
 
     @app.route("/ingresar", methods=["GET", "POST"])
     def ingresar():
@@ -417,23 +454,48 @@ def create_app(test_config=None):
     def perfil():
         if request.method == "POST":
             nombre = request.form.get("nombre", "").strip()
-            carrera = request.form.get("carrera", "").strip()
+            carrera_texto = request.form.get("carrera", "").strip()
             ciclo = request.form.get("ciclo", "").strip()
-            intereses = request.form.get("intereses", "")
-            if not nombre:
-                flash("Tu nombre no puede quedar vacio.", "error")
-            elif len(nombre) > 80 or len(carrera) > 80 or len(intereses) > 300:
-                flash("Uno de los campos supera la longitud permitida.", "error")
-            elif ciclo and (not ciclo.isdigit() or not 1 <= int(ciclo) <= 12):
-                flash("El ciclo debe estar entre 1 y 12.", "error")
-            else:
+            try:
+                carrera_upc = _resolver_carrera_upc(
+                    request.form.get("carrera_upc_id"), carrera_texto
+                )
+                carrera = carrera_upc.nombre if carrera_upc else carrera_texto
+                intereses = normalizar_intereses_upc(
+                    request.form.getlist("intereses")
+                )
+                if not nombre:
+                    raise ValueError("Tu nombre no puede quedar vacío.")
+                if len(nombre) > 80 or len(carrera) > 80:
+                    raise ValueError("Uno de los campos supera la longitud permitida.")
+                if ciclo and carrera_upc is None:
+                    raise ValueError(
+                        "Selecciona una carrera antes de indicar el ciclo."
+                    )
+                ciclos_validos = ciclos_para_carrera(
+                    carrera_upc.clave if carrera_upc else None
+                )
+                if ciclo and (
+                    not ciclo.isdigit() or int(ciclo) not in ciclos_validos
+                ):
+                    raise ValueError(
+                        f"El ciclo debe estar entre 1 y {len(ciclos_validos)}."
+                    )
                 g.usuario.nombre = nombre
                 g.usuario.carrera = carrera or None
                 g.usuario.ciclo = int(ciclo) if ciclo else None
-                g.usuario.intereses = ", ".join(sorted(_intereses(intereses))) or None
+                g.usuario.intereses = ", ".join(intereses) or None
+                if g.usuario.perfil_upc is not None:
+                    g.usuario.perfil_upc.carrera_upc = carrera_upc
+                    g.usuario.perfil_upc.facultad = (
+                        carrera_upc.facultad if carrera_upc else None
+                    )
                 db.session.commit()
                 flash("Perfil actualizado.", "success")
                 return redirect(url_for("perfil"))
+            except ValueError as error:
+                db.session.rollback()
+                flash(str(error), "error")
         return render_template(
             "perfil.html",
             dias=DIAS,
@@ -474,6 +536,20 @@ def create_app(test_config=None):
                 raise ValueError("La carrera UPC seleccionada no esta disponible")
             if carrera_upc and facultad is None:
                 facultad = carrera_upc.facultad
+            ciclo_valor = request.form.get("ciclo", "").strip()
+            if ciclo_valor:
+                if carrera_upc is None:
+                    raise ValueError("Selecciona una carrera antes de indicar el ciclo")
+                ciclos_validos = ciclos_para_carrera(carrera_upc.clave)
+                if not ciclo_valor.isdigit() or int(ciclo_valor) not in ciclos_validos:
+                    raise ValueError(
+                        f"El ciclo debe estar entre 1 y {len(ciclos_validos)}"
+                    )
+            intereses = (
+                normalizar_intereses_upc(request.form.getlist("intereses"))
+                if "intereses" in request.form
+                else None
+            )
             modalidad = convertir_enum(ModalidadUPC, request.form.get("modalidad"))
             objetivo = convertir_enum(
                 ObjetivoSocialite, request.form.get("objetivo")
@@ -503,6 +579,12 @@ def create_app(test_config=None):
             perfil_upc.espacio_preferido = espacio
             perfil_upc.validar_coherencia()
             db.session.add(perfil_upc)
+            if carrera_upc is not None:
+                g.usuario.carrera = carrera_upc.nombre
+            if ciclo_valor:
+                g.usuario.ciclo = int(ciclo_valor)
+            if intereses is not None:
+                g.usuario.intereses = ", ".join(intereses) or None
             db.session.commit()
             flash("Contexto UPC actualizado.", "success")
         except ValueError as error:

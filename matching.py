@@ -25,8 +25,19 @@ PESO_ESTILO_OBJETIVO = 0.08
 PESO_VIDA_UNIVERSITARIA = 0.06
 PESO_METAS_CURSO = 0.10
 MINUTOS_HORARIO_COMPLETO = 120
-INTERESES_PARA_PUNTAJE_COMPLETO = 3
-TOTAL_SENALES_POSIBLES = 8
+PESO_TOTAL_POSIBLE = sum(
+    (
+        PESO_CURSOS,
+        PESO_HORARIOS,
+        PESO_INTERESES,
+        PESO_CAMPUS,
+        PESO_CONTEXTO_ACADEMICO,
+        PESO_ESTILO_OBJETIVO,
+        PESO_VIDA_UNIVERSITARIA,
+        PESO_METAS_CURSO,
+    )
+)
+PROBABILIDAD_NEUTRAL = 0.50
 
 
 class CursoCompatible(Protocol):
@@ -75,6 +86,7 @@ class ContextoUPCPreparado(TypedDict):
 class PerfilPreparado(TypedDict):
     cursos: dict[str, CursoCompatible]
     intereses: dict[str, str]
+    intereses_categorias: dict[str, str]
     intervalos: dict[str, list[tuple[int, int]]]
     carrera: str
     contexto_upc: ContextoUPCPreparado
@@ -258,10 +270,17 @@ def preparar_perfil(usuario: UsuarioCompatible) -> PerfilPreparado:
     intereses = {
         normalizar_texto(valor): valor for valor in usuario.lista_intereses
     }
+    intereses_categorias: dict[str, str] = {}
+    for interes in getattr(usuario, "intereses_catalogados", ()):
+        clave = normalizar_texto(getattr(interes, "etiqueta", ""))
+        categoria = _valor_enum(getattr(interes, "categoria", None))
+        if clave and categoria:
+            intereses_categorias[clave] = categoria
     contexto_upc = _contexto_upc(usuario)
     return {
         "cursos": cursos,
         "intereses": intereses,
+        "intereses_categorias": intereses_categorias,
         "intervalos": _intervalos_por_dia(usuario.horarios),
         "carrera": normalizar_texto(
             contexto_upc["carrera_etiqueta"] or usuario.carrera
@@ -292,6 +311,68 @@ def _intereses_comunes(
     propios = perfil_usuario["intereses"]
     ajenos = perfil_candidato["intereses"]
     return [propios[clave] for clave in sorted(propios.keys() & ajenos.keys())]
+
+
+def _compatibilidad_intereses(
+    usuario: PerfilPreparado, candidato: PerfilPreparado
+) -> tuple[float, dict[str, object]] | None:
+    """Combina Jaccard exacto (80 %) y proximidad de categorías (20 %)."""
+    propios = usuario["intereses"]
+    ajenos = candidato["intereses"]
+    if not propios or not ajenos:
+        return None
+
+    claves_propias = set(propios)
+    claves_ajenas = set(ajenos)
+    comunes = claves_propias & claves_ajenas
+    union = claves_propias | claves_ajenas
+    jaccard_exacto = len(comunes) / len(union) if union else 0.0
+
+    categorias_propias = set(usuario["intereses_categorias"].values())
+    categorias_ajenas = set(candidato["intereses_categorias"].values())
+    categorias_union = categorias_propias | categorias_ajenas
+    jaccard_categorias = (
+        len(categorias_propias & categorias_ajenas) / len(categorias_union)
+        if categorias_union
+        else 0.0
+    )
+    valor = _limitar(jaccard_exacto * 0.80 + jaccard_categorias * 0.20)
+
+    comparaciones: list[dict[str, object]] = []
+    for clave in sorted(claves_propias):
+        categoria = usuario["intereses_categorias"].get(clave)
+        coincide_con: str | None
+        if clave in claves_ajenas:
+            similitud = 100
+            coincide_con = ajenos[clave]
+        else:
+            candidatos_categoria = [
+                ajenos[clave_ajena]
+                for clave_ajena, categoria_ajena in candidato[
+                    "intereses_categorias"
+                ].items()
+                if categoria and categoria == categoria_ajena
+            ]
+            similitud = 25 if candidatos_categoria else 0
+            coincide_con = candidatos_categoria[0] if candidatos_categoria else None
+        comparaciones.append(
+            {
+                "interes": propios[clave],
+                "categoria": categoria,
+                "porcentaje_similitud": similitud,
+                "coincide_con": coincide_con,
+            }
+        )
+
+    return valor, {
+        "porcentaje_similitud": round(valor * 100, 1),
+        "jaccard_exacto": round(jaccard_exacto, 4),
+        "porcentaje_jaccard_exacto": round(jaccard_exacto * 100, 1),
+        "jaccard_categorias": round(jaccard_categorias, 4),
+        "porcentaje_jaccard_categorias": round(jaccard_categorias * 100, 1),
+        "formula": "0.80 × Jaccard exacto + 0.20 × Jaccard de categorías",
+        "comparaciones": comparaciones,
+    }
 
 
 def _componente_cursos(cantidad: int) -> float:
@@ -479,10 +560,32 @@ def _serializar_componentes(
             "valor": round(componente.valor, 4),
             "puntos": round(componente.valor * componente.peso / peso_total * 100),
             "peso": round(componente.peso / peso_total * 100),
+            "porcentaje_similitud": round(componente.valor * 100, 1),
+            "contribucion_porcentual": round(
+                componente.valor * componente.peso / peso_total * 100, 1
+            ),
+            "peso_porcentual": round(componente.peso / peso_total * 100, 1),
         }
         for componente in activos
     }
     return round(_limitar(total), 4), serializados
+
+
+def estimar_probabilidad_emparejamiento(
+    afinidad: float, cobertura: float
+) -> float | None:
+    """Contrae la afinidad hacia 50 % cuando la evidencia está incompleta.
+
+    Es una estimación heurística y explicable, no una probabilidad calibrada
+    con resultados históricos. Sin ninguna señal compartida devuelve ``None``.
+    """
+    cobertura = _limitar(cobertura)
+    if cobertura == 0:
+        return None
+    estimacion = PROBABILIDAD_NEUTRAL + (
+        _limitar(afinidad) - PROBABILIDAD_NEUTRAL
+    ) * cobertura
+    return round(_limitar(estimacion), 4)
 
 
 def calcular_afinidad(
@@ -496,19 +599,32 @@ def calcular_afinidad(
     perfil_candidato = perfil_candidato or preparar_perfil(candidato)
     cursos = _cursos_comunes(perfil_usuario, perfil_candidato)
     intereses = _intereses_comunes(perfil_usuario, perfil_candidato)
+    compatibilidad_intereses = _compatibilidad_intereses(
+        perfil_usuario, perfil_candidato
+    )
     minutos = _minutos_entre_intervalos(
         perfil_usuario["intervalos"], perfil_candidato["intervalos"]
     )
 
     componentes: list[ComponenteAfinidad] = [
-        ComponenteAfinidad("cursos", _componente_cursos(len(cursos)), PESO_CURSOS),
         ComponenteAfinidad(
-            "horarios", _limitar(minutos / MINUTOS_HORARIO_COMPLETO), PESO_HORARIOS
+            "cursos",
+            _componente_cursos(len(cursos)),
+            PESO_CURSOS,
+            perfil_usuario["tiene_cursos"] and perfil_candidato["tiene_cursos"],
+        ),
+        ComponenteAfinidad(
+            "horarios",
+            _limitar(minutos / MINUTOS_HORARIO_COMPLETO),
+            PESO_HORARIOS,
+            perfil_usuario["tiene_horarios"]
+            and perfil_candidato["tiene_horarios"],
         ),
         ComponenteAfinidad(
             "intereses",
-            _limitar(len(intereses) / INTERESES_PARA_PUNTAJE_COMPLETO),
+            compatibilidad_intereses[0] if compatibilidad_intereses else 0.0,
             PESO_INTERESES,
+            compatibilidad_intereses is not None,
         ),
     ]
     razones: list[dict[str, object]] = []
@@ -534,7 +650,11 @@ def calcular_afinidad(
         razones.append(
             {
                 "tipo": "intereses",
-                "titulo": f"{len(intereses)} interes{'es' if len(intereses) != 1 else ''} compartido{'s' if len(intereses) != 1 else ''}",
+                "titulo": (
+                    f"{len(intereses)} "
+                    f"{'interés' if len(intereses) == 1 else 'intereses'} "
+                    f"compartido{'s' if len(intereses) != 1 else ''}"
+                ),
                 "detalle": ", ".join(intereses),
             }
         )
@@ -572,7 +692,11 @@ def calcular_afinidad(
                 "interdisciplinaria": "Conexion interdisciplinaria",
             }[tipo]
             razones.append(
-                {"tipo": "contexto_academico", "titulo": etiqueta, "detalle": "Contexto academico compatible"}
+                {
+                    "tipo": "contexto_academico",
+                    "titulo": etiqueta,
+                    "detalle": "Contexto académico compatible",
+                }
             )
 
     estilo = _compatibilidad_estilo_objetivo(upc_usuario, upc_candidato)
@@ -623,26 +747,33 @@ def calcular_afinidad(
         )
 
     total, componentes_serializados = _serializar_componentes(componentes)
-    senales_disponibles = sum(
-        (
-            perfil_usuario["tiene_cursos"] and perfil_candidato["tiene_cursos"],
-            perfil_usuario["tiene_horarios"] and perfil_candidato["tiene_horarios"],
-            perfil_usuario["tiene_intereses"] and perfil_candidato["tiene_intereses"],
-            campus is not None,
-            academica is not None,
-            estilo is not None,
-            actividades is not None,
-            metas is not None,
-        )
+    peso_disponible = sum(
+        componente.peso for componente in componentes if componente.disponible
     )
+    cobertura = _limitar(peso_disponible / PESO_TOTAL_POSIBLE)
+    probabilidad = estimar_probabilidad_emparejamiento(total, cobertura)
     return {
         "score": total,
         "porcentaje": round(total * 100),
-        "confianza": round(senales_disponibles / TOTAL_SENALES_POSIBLES * 100),
+        "confianza": round(cobertura * 100),
+        "probabilidad_emparejamiento": (
+            round(probabilidad * 100, 1) if probabilidad is not None else None
+        ),
+        "modelo_probabilidad": {
+            "nombre": "estimacion_heuristica_v1",
+            "afinidad": total,
+            "cobertura": round(cobertura, 4),
+            "base_neutral": PROBABILIDAD_NEUTRAL,
+            "formula": "0.50 + (afinidad - 0.50) × cobertura",
+            "calibrada_con_datos_historicos": False,
+        },
         "cursos": cursos,
         "horas": round(minutos / 60, 1),
         "minutos": minutos,
         "intereses": intereses,
+        "intereses_detalle": (
+            compatibilidad_intereses[1] if compatibilidad_intereses else None
+        ),
         "razones": razones,
         "componentes": componentes_serializados,
         "contexto_upc": contexto_resultado,

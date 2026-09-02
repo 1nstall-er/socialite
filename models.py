@@ -8,6 +8,7 @@ existentes ni perder perfiles creados por los usuarios.
 from __future__ import annotations
 
 import re
+from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import date, datetime, timezone
 from enum import Enum
@@ -25,6 +26,9 @@ CREDITOS_EXTRAACADEMICOS_REQUERIDOS: Final[int] = 4
 VIERNES_CULTURAL_INICIO: Final[str] = "13:00"
 VIERNES_CULTURAL_FIN: Final[str] = "15:00"
 PATRON_PERIODO_UPC: Final[re.Pattern[str]] = re.compile(r"^\d{4}-[12]$")
+CICLOS_REGULARES_UPC: Final[int] = 10
+CICLOS_MEDICINA_UPC: Final[int] = 14
+MAX_INTERESES_USUARIO: Final[int] = 12
 
 
 class EnumEtiquetado(str, Enum):
@@ -120,6 +124,16 @@ class TipoEspacioUPC(EnumEtiquetado):
     INTERNATIONAL_LOUNGE = ("international_lounge", "International Lounge")
 
 
+class CategoriaInteresUPC(EnumEtiquetado):
+    TECNOLOGIA = ("tecnologia", "Tecnología e innovación")
+    ACADEMICO = ("academico", "Académicos")
+    CREATIVIDAD = ("creatividad", "Arte y creatividad")
+    DEPORTES = ("deportes", "Deportes y movimiento")
+    COMUNIDAD = ("comunidad", "Comunidad e impacto")
+    PROFESIONAL = ("profesional", "Desarrollo profesional")
+    BIENESTAR = ("bienestar", "Bienestar y estilo de vida")
+
+
 @dataclass(frozen=True, slots=True)
 class CampusInfo:
     codigo: CampusUPC
@@ -154,6 +168,83 @@ CAMPUS_UPC: Final[dict[CampusUPC, CampusInfo]] = {
         "Av. La Marina 2810, esquina con Av. Rafael Escardó",
     ),
 }
+
+
+@dataclass(frozen=True, slots=True)
+class InteresUPCInfo:
+    """Opción controlada de interés para perfiles y matching."""
+
+    clave: str
+    etiqueta: str
+    categoria: CategoriaInteresUPC
+
+
+# Taxonomía de producto basada en ámbitos académicos y de Vida Universitaria.
+# No pretende ser una clasificación institucional oficial de la UPC.
+INTERESES_UPC: Final[tuple[InteresUPCInfo, ...]] = (
+    InteresUPCInfo("tecnologia", "Tecnología", CategoriaInteresUPC.TECNOLOGIA),
+    InteresUPCInfo("programacion", "Programación", CategoriaInteresUPC.TECNOLOGIA),
+    InteresUPCInfo(
+        "inteligencia-artificial",
+        "Inteligencia artificial",
+        CategoriaInteresUPC.TECNOLOGIA,
+    ),
+    InteresUPCInfo("ciencia-de-datos", "Ciencia de datos", CategoriaInteresUPC.TECNOLOGIA),
+    InteresUPCInfo("ciberseguridad", "Ciberseguridad", CategoriaInteresUPC.TECNOLOGIA),
+    InteresUPCInfo("robotica", "Robótica", CategoriaInteresUPC.TECNOLOGIA),
+    InteresUPCInfo("videojuegos", "Videojuegos", CategoriaInteresUPC.TECNOLOGIA),
+    InteresUPCInfo("innovacion", "Innovación", CategoriaInteresUPC.TECNOLOGIA),
+    InteresUPCInfo("matematicas", "Matemáticas", CategoriaInteresUPC.ACADEMICO),
+    InteresUPCInfo("investigacion", "Investigación", CategoriaInteresUPC.ACADEMICO),
+    InteresUPCInfo("lectura", "Lectura", CategoriaInteresUPC.ACADEMICO),
+    InteresUPCInfo("escritura", "Escritura", CategoriaInteresUPC.ACADEMICO),
+    InteresUPCInfo("idiomas", "Idiomas", CategoriaInteresUPC.ACADEMICO),
+    InteresUPCInfo("debate", "Debate", CategoriaInteresUPC.ACADEMICO),
+    InteresUPCInfo("ciencias", "Ciencias", CategoriaInteresUPC.ACADEMICO),
+    InteresUPCInfo("historia", "Historia", CategoriaInteresUPC.ACADEMICO),
+    InteresUPCInfo("musica", "Música", CategoriaInteresUPC.CREATIVIDAD),
+    InteresUPCInfo("fotografia", "Fotografía", CategoriaInteresUPC.CREATIVIDAD),
+    InteresUPCInfo("cine-y-series", "Cine y series", CategoriaInteresUPC.CREATIVIDAD),
+    InteresUPCInfo("diseno", "Diseño", CategoriaInteresUPC.CREATIVIDAD),
+    InteresUPCInfo(
+        "dibujo-e-ilustracion",
+        "Dibujo e ilustración",
+        CategoriaInteresUPC.CREATIVIDAD,
+    ),
+    InteresUPCInfo("teatro", "Teatro", CategoriaInteresUPC.CREATIVIDAD),
+    InteresUPCInfo("danza", "Danza", CategoriaInteresUPC.CREATIVIDAD),
+    InteresUPCInfo(
+        "creacion-de-contenido",
+        "Creación de contenido",
+        CategoriaInteresUPC.CREATIVIDAD,
+    ),
+    InteresUPCInfo("deporte", "Deporte", CategoriaInteresUPC.DEPORTES),
+    InteresUPCInfo("futbol", "Fútbol", CategoriaInteresUPC.DEPORTES),
+    InteresUPCInfo("voley", "Vóley", CategoriaInteresUPC.DEPORTES),
+    InteresUPCInfo("basquet", "Básquet", CategoriaInteresUPC.DEPORTES),
+    InteresUPCInfo("running", "Running", CategoriaInteresUPC.DEPORTES),
+    InteresUPCInfo("gimnasio", "Gimnasio", CategoriaInteresUPC.DEPORTES),
+    InteresUPCInfo("natacion", "Natación", CategoriaInteresUPC.DEPORTES),
+    InteresUPCInfo("ciclismo", "Ciclismo", CategoriaInteresUPC.DEPORTES),
+    InteresUPCInfo("voluntariado", "Voluntariado", CategoriaInteresUPC.COMUNIDAD),
+    InteresUPCInfo("sostenibilidad", "Sostenibilidad", CategoriaInteresUPC.COMUNIDAD),
+    InteresUPCInfo("impacto-social", "Impacto social", CategoriaInteresUPC.COMUNIDAD),
+    InteresUPCInfo("clubes-upc", "Clubes UPC", CategoriaInteresUPC.COMUNIDAD),
+    InteresUPCInfo("grupos-upc", "Grupos UPC", CategoriaInteresUPC.COMUNIDAD),
+    InteresUPCInfo("ciudadania", "Ciudadanía", CategoriaInteresUPC.COMUNIDAD),
+    InteresUPCInfo("networking", "Networking", CategoriaInteresUPC.PROFESIONAL),
+    InteresUPCInfo("emprendimiento", "Emprendimiento", CategoriaInteresUPC.PROFESIONAL),
+    InteresUPCInfo("liderazgo", "Liderazgo", CategoriaInteresUPC.PROFESIONAL),
+    InteresUPCInfo("marketing", "Marketing", CategoriaInteresUPC.PROFESIONAL),
+    InteresUPCInfo("finanzas", "Finanzas", CategoriaInteresUPC.PROFESIONAL),
+    InteresUPCInfo("negocios", "Negocios", CategoriaInteresUPC.PROFESIONAL),
+    InteresUPCInfo("empleabilidad", "Empleabilidad", CategoriaInteresUPC.PROFESIONAL),
+    InteresUPCInfo("bienestar", "Bienestar", CategoriaInteresUPC.BIENESTAR),
+    InteresUPCInfo("viajes", "Viajes", CategoriaInteresUPC.BIENESTAR),
+    InteresUPCInfo("gastronomia", "Gastronomía", CategoriaInteresUPC.BIENESTAR),
+    InteresUPCInfo("mascotas", "Mascotas", CategoriaInteresUPC.BIENESTAR),
+    InteresUPCInfo("moda", "Moda", CategoriaInteresUPC.BIENESTAR),
+)
 
 
 FUENTE_MALLAS_UPC: Final[str] = (
@@ -242,6 +333,71 @@ def slugificar(valor: str) -> str:
     texto = normalize("NFKD", valor.strip().casefold())
     sin_tildes = "".join(caracter for caracter in texto if category(caracter) != "Mn")
     return re.sub(r"[^a-z0-9]+", "-", sin_tildes).strip("-")
+
+
+DURACION_CICLOS_POR_CARRERA: Final[dict[str, int]] = {
+    "medicina": CICLOS_MEDICINA_UPC,
+}
+
+ALIAS_INTERESES_UPC: Final[dict[str, str]] = {
+    "ia": "inteligencia-artificial",
+    "inteligencia-artificial-ia": "inteligencia-artificial",
+    "basket": "basquet",
+    "basketball": "basquet",
+    "voleibol": "voley",
+    "programar": "programacion",
+    "foto": "fotografia",
+}
+
+INTERESES_UPC_POR_CLAVE: Final[dict[str, InteresUPCInfo]] = {
+    interes.clave: interes for interes in INTERESES_UPC
+}
+
+
+def duracion_ciclos_carrera(clave_carrera: str | None) -> int:
+    """Devuelve la duración publicada; diez ciclos salvo excepciones verificadas."""
+    return DURACION_CICLOS_POR_CARRERA.get(
+        slugificar(clave_carrera or ""), CICLOS_REGULARES_UPC
+    )
+
+
+def ciclos_para_carrera(clave_carrera: str | None) -> tuple[int, ...]:
+    return tuple(range(1, duracion_ciclos_carrera(clave_carrera) + 1))
+
+
+def obtener_interes_upc(valor: str) -> InteresUPCInfo | None:
+    clave = slugificar(valor)
+    clave = ALIAS_INTERESES_UPC.get(clave, clave)
+    return INTERESES_UPC_POR_CLAVE.get(clave)
+
+
+def normalizar_intereses_upc(valores: Iterable[str]) -> list[str]:
+    """Valida selecciones del formulario y devuelve etiquetas canónicas únicas."""
+    encontrados: dict[str, InteresUPCInfo] = {}
+    desconocidos: list[str] = []
+    for valor in valores:
+        for fragmento in str(valor).split(","):
+            texto = fragmento.strip()
+            if not texto:
+                continue
+            interes = obtener_interes_upc(texto)
+            if interes is None:
+                desconocidos.append(texto)
+            else:
+                encontrados[interes.clave] = interes
+    if desconocidos:
+        raise ValueError(
+            "Selecciona intereses del catálogo: " + ", ".join(desconocidos[:3])
+        )
+    if len(encontrados) > MAX_INTERESES_USUARIO:
+        raise ValueError(
+            f"Puedes seleccionar hasta {MAX_INTERESES_USUARIO} intereses"
+        )
+    return [
+        interes.etiqueta
+        for interes in INTERESES_UPC
+        if interes.clave in encontrados
+    ]
 
 
 @dataclass(frozen=True, slots=True)
@@ -425,6 +581,18 @@ class Usuario(db.Model):
     @property
     def lista_intereses(self) -> list[str]:
         return [item.strip() for item in (self.intereses or "").split(",") if item.strip()]
+
+    @property
+    def intereses_catalogados(self) -> list[InteresUPCInfo]:
+        """Resuelve intereses legados y nuevos contra la taxonomía vigente."""
+        resultado: list[InteresUPCInfo] = []
+        vistos: set[str] = set()
+        for valor in self.lista_intereses:
+            interes = obtener_interes_upc(valor)
+            if interes is not None and interes.clave not in vistos:
+                vistos.add(interes.clave)
+                resultado.append(interes)
+        return resultado
 
     @property
     def iniciales(self) -> str:

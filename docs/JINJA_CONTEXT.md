@@ -37,13 +37,21 @@ agrega `contrato`, listo para el nuevo frontend:
     `cursos`, `horarios`, `perfil_completo`, `perfil_upc` y
     `participaciones_upc`.
   - `porcentaje`: afinidad final entre 0 y 100.
-  - `confianza`: porcentaje de senales disponibles para calcularla.
+  - `confianza`: cobertura ponderada de señales disponibles, entre 0 y 100.
+  - `probabilidad_emparejamiento`: estimación porcentual contraída hacia 50 %
+    cuando faltan datos; puede ser `null` si no existe evidencia.
+  - `modelo_probabilidad`: nombre, afinidad, cobertura, base neutral, fórmula y
+    `calibrada_con_datos_historicos=false`.
   - `razones[]`: `tipo`, `titulo`, `detalle`.
-  - `componentes.cursos|horarios|intereses`: `valor`, `puntos`, `peso`.
+  - `componentes.cursos|horarios|intereses`: conserva `valor`, `puntos` y
+    `peso`, y agrega `porcentaje_similitud`, `contribucion_porcentual` y
+    `peso_porcentual`.
   - Cuando ambos perfiles tienen datos suficientes se agregan, sin romper las
     claves anteriores: `campus`, `contexto_academico`, `estilo_objetivo`,
     `vida_universitaria` y `metas_curso`.
   - `contexto_upc`: evidencia estructurada de las coincidencias UPC usadas.
+  - `intereses_detalle`: Jaccard exacto, Jaccard por categorías, fórmula y una
+    comparación porcentual para cada interés del usuario.
   - `horas`, `minutos`, `cursos`, `intereses`.
 - `contrato.paginacion`.
 - `contrato.filtros`: `q`, `curso`, `afinidad`.
@@ -64,16 +72,25 @@ Además de las variables actuales, entrega:
   `pendientes`.
 - `perfil.metas_curso[]`: curso, rol de estudio, prioridad, intento y si busca
   equipo.
-- `catalogo_upc`: opciones de enums y los espacios oficiales disponibles.
+- `catalogo_upc`: opciones de enums, espacios y los siguientes catálogos:
+  - `carreras`: las 59 carreras activas. Cada una incluye `id`, `facultad`,
+    `duracion_ciclos` y sus `ciclos[]` válidos.
+  - `carreras_por_facultad[]`: agrupación lista para construir selects
+    dependientes en Jinja2 o JavaScript sin otra consulta.
+  - `ciclos`: ciclos 1–14; para validar se debe usar la colección de la carrera
+    seleccionada. Las carreras regulares llegan a 10 y Medicina a 14.
+  - `intereses`: 50 opciones con `clave`, `etiqueta` y categoría.
+  - `intereses_por_categoria[]`: agrupación lista para checkboxes o multiselect.
+  - `limites.max_intereses`: actualmente 12.
 
 El mismo contrato privado está disponible en `GET /api/v1/perfil`. El catálogo
 público puede obtenerse por separado en `GET /api/v1/catalogo-upc`.
 
 Formularios POST listos para integrar:
 
-- `/perfil/upc`: `campus`, `facultad`, `carrera_upc_id`, `modalidad`, `objetivo`,
+- `/perfil/upc`: `campus`, `facultad`, `carrera_upc_id`, `ciclo`, `modalidad`, `objetivo`,
   `estilo_estudio`, `viernes_cultural_disponible`, `acepta_intercampus` y
-  `espacio_preferido_id`.
+  `espacio_preferido_id`. También acepta múltiples campos `intereses`.
 - `/perfil/participaciones`: `tipo`, `nombre`, `rol`, `campus`, `periodo`,
   `creditos_confirmados` y `activa`.
 - `/perfil/participaciones/<id>/eliminar`.
@@ -81,6 +98,10 @@ Formularios POST listos para integrar:
   `busca_equipo`.
 
 Todos los POST deben incluir `csrf_token`.
+
+`GET /registro` también recibe `catalogo_upc`. Para el multiselect se envía un
+campo `intereses` por opción seleccionada; el backend admite además una cadena
+separada por comas durante la transición del frontend.
 
 ## `GET /personas/<id>` → `persona.html`
 
