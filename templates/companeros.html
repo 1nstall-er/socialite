@@ -59,7 +59,7 @@
           <div class="afinidad">{{ sugerencia.porcentaje }}<small>%</small><span>afinidad</span></div>
         </div>
         {% if sugerencia.usuario.biografia %}<p class="biografia-persona">{{ sugerencia.usuario.biografia }}</p>{% endif %}
-        <div class="barra-afinidad"><i style="width: {{ sugerencia.porcentaje }}%"></i></div>
+        <progress class="barra-afinidad" value="{{ sugerencia.porcentaje }}" max="100" aria-label="{{ sugerencia.porcentaje }}% de afinidad"></progress>
         <div class="metricas-match">
           <div>
             <span>Probabilidad estimada</span>
@@ -77,7 +77,7 @@
               {% for clave, componente in sugerencia.componentes.items() %}
                 <div class="componente-match">
                   <div><span>{{ nombres_componentes.get(clave, clave|replace('_', ' ')|title) }}</span><strong>{{ componente.porcentaje_similitud }}%</strong></div>
-                  <div class="barra-componente"><i style="width: {{ componente.porcentaje_similitud }}%"></i></div>
+                  <progress class="barra-componente" value="{{ componente.porcentaje_similitud }}" max="100" aria-label="{{ componente.porcentaje_similitud }}% de similitud en {{ nombres_componentes.get(clave, clave) }}"></progress>
                   <small>Peso {{ componente.peso_porcentual }}% · aporta {{ componente.contribucion_porcentual }} puntos</small>
                 </div>
               {% endfor %}

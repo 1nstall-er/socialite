@@ -12,7 +12,6 @@ from typing import Final
 from PIL import Image, ImageOps, UnidentifiedImageError
 from werkzeug.datastructures import FileStorage
 
-
 MAX_FOTO_BYTES: Final[int] = 5 * 1024 * 1024
 MIN_LADO_FOTO: Final[int] = 200
 TAMANO_AVATAR: Final[tuple[int, int]] = (640, 640)

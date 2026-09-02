@@ -33,12 +33,14 @@ companeros y creen grupos dentro del campus. El MVP esta enfocado en la UPC.
 - Pillow para procesar imágenes sin confiar en la extensión del archivo
 - SQLite en desarrollo
 - HTML y CSS sin dependencias de frontend
+- Python 3.11 o superior
 
 ## Arquitectura de backend
 
 - `app.py`: rutas, validacion, autorizacion y contratos de respuesta.
 - `matching.py`: algoritmo puro de afinidad y solapamiento de horarios.
-- `queries.py`: consultas con carga anticipada para evitar N+1.
+- `queries.py`: planes de carga reutilizables que evitan N+1 y productos
+  cartesianos entre colecciones.
 - `presenters.py`: contratos serializables para Jinja2 y JSON.
 - `models.py`: entidades y relaciones persistentes.
 - `media.py`: validación, normalización y almacenamiento privado de avatares.
@@ -79,6 +81,17 @@ Para validar el tipado estricto del motor puro:
 pip install -r requirements-dev.txt
 python -m mypy --strict matching.py
 ```
+
+Para ejecutar el análisis estático del proyecto:
+
+```powershell
+python -m ruff check .
+```
+
+El ranking de compañeros conserva un orden exacto, pero mantiene en memoria
+solo el prefijo necesario para la página solicitada. En las primeras páginas
+reduce el ordenamiento de `O(n log n)` a `O(n log k)`, donde `k` es el último
+resultado visible.
 
 ## Alcance pendiente
 

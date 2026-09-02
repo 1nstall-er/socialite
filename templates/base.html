@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="description" content="Socialite conecta estudiantes UPC para estudiar y conocer gente en el campus.">
 <title>{% block title %}Socialite{% endblock %}</title>
+<link rel="icon" href="{{ url_for('static', filename='favicon.svg') }}" type="image/svg+xml">
 <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 </head>
 <body>
@@ -52,33 +53,7 @@
 <div class="contenedor">Hecho para conectar dentro del campus UPC.</div>
 </footer>
 
-<script>
-(function () {
-  var boton = document.querySelector(".menu-boton");
-  var menu = document.getElementById("menu-principal");
-  if (!boton || !menu) return;
-
-  function cerrar() {
-    menu.classList.remove("abierto");
-    boton.setAttribute("aria-expanded", "false");
-    boton.setAttribute("aria-label", "Abrir menú");
-  }
-
-  boton.addEventListener("click", function () {
-    var abierto = menu.classList.toggle("abierto");
-    boton.setAttribute("aria-expanded", String(abierto));
-    boton.setAttribute("aria-label", abierto ? "Cerrar menú" : "Abrir menú");
-  });
-
-  menu.addEventListener("click", function (e) {
-    if (e.target.closest("a")) cerrar();
-  });
-
-  document.addEventListener("keydown", function (e) {
-    if (e.key === "Escape") cerrar();
-  });
-})();
-</script>
+<script src="{{ url_for('static', filename='app.js') }}" defer></script>
 {% block scripts %}{% endblock %}
 </body>
 </html>

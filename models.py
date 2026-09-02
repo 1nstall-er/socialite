@@ -10,16 +10,15 @@ from __future__ import annotations
 import re
 from collections.abc import Iterable
 from dataclasses import dataclass
-from datetime import date, datetime, timezone
-from enum import Enum
-from typing import Final, TypeVar
+from datetime import UTC, date, datetime
+from enum import StrEnum
+from typing import Final, Self, TypeVar
 from unicodedata import category, normalize
 
 from flask_sqlalchemy import SQLAlchemy
 from sqlalchemy import inspect, text
 from sqlalchemy.orm import validates
 from werkzeug.security import check_password_hash, generate_password_hash
-
 
 db = SQLAlchemy()
 
@@ -32,12 +31,12 @@ CICLOS_MEDICINA_UPC: Final[int] = 14
 MAX_INTERESES_USUARIO: Final[int] = 12
 
 
-class EnumEtiquetado(str, Enum):
+class EnumEtiquetado(StrEnum):
     """Enum persistible como texto y con etiqueta estable para Jinja2."""
 
     etiqueta: str
 
-    def __new__(cls, valor: str, etiqueta: str) -> "EnumEtiquetado":
+    def __new__(cls, valor: str, etiqueta: str) -> Self:
         miembro = str.__new__(cls, valor)
         miembro._value_ = valor
         miembro.etiqueta = etiqueta
@@ -762,8 +761,8 @@ class PerfilUPC(db.Model):
     acepta_intercampus = db.Column(db.Boolean, nullable=False, default=False)
     espacio_preferido_id = db.Column(db.Integer, db.ForeignKey("espacios_upc.id"))
     actualizado_en = db.Column(
-        db.DateTime(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc),
-        onupdate=lambda: datetime.now(timezone.utc),
+        db.DateTime(timezone=True), nullable=False, default=lambda: datetime.now(UTC),
+        onupdate=lambda: datetime.now(UTC),
     )
 
     usuario = db.relationship("Usuario", back_populates="perfil_upc")
@@ -804,7 +803,7 @@ class ParticipacionUPC(db.Model):
     creditos_confirmados = db.Column(db.Integer, nullable=False, default=0)
     activa = db.Column(db.Boolean, nullable=False, default=True, index=True)
     creada_en = db.Column(
-        db.DateTime(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc)
+        db.DateTime(timezone=True), nullable=False, default=lambda: datetime.now(UTC)
     )
 
     usuario = db.relationship("Usuario", back_populates="participaciones_upc")
@@ -849,8 +848,8 @@ class MetaCursoUPC(db.Model):
     intento = db.Column(db.Integer, nullable=False, default=1)
     busca_equipo = db.Column(db.Boolean, nullable=False, default=True)
     actualizado_en = db.Column(
-        db.DateTime(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc),
-        onupdate=lambda: datetime.now(timezone.utc),
+        db.DateTime(timezone=True), nullable=False, default=lambda: datetime.now(UTC),
+        onupdate=lambda: datetime.now(UTC),
     )
 
     usuario = db.relationship("Usuario", back_populates="metas_curso")
@@ -884,7 +883,7 @@ class Grupo(db.Model):
     hora_fin = db.Column(db.String(5), nullable=False)
     max_miembros = db.Column(db.Integer, nullable=False, default=6)
     creado_en = db.Column(
-        db.DateTime(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc)
+        db.DateTime(timezone=True), nullable=False, default=lambda: datetime.now(UTC)
     )
 
     curso = db.relationship("Curso", backref="grupos")
@@ -918,11 +917,11 @@ class Conexion(db.Model):
     )
     estado = db.Column(db.String(20), nullable=False, default="pendiente", index=True)
     creada_en = db.Column(
-        db.DateTime(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc)
+        db.DateTime(timezone=True), nullable=False, default=lambda: datetime.now(UTC)
     )
     actualizada_en = db.Column(
-        db.DateTime(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc),
-        onupdate=lambda: datetime.now(timezone.utc),
+        db.DateTime(timezone=True), nullable=False, default=lambda: datetime.now(UTC),
+        onupdate=lambda: datetime.now(UTC),
     )
 
     remitente = db.relationship(

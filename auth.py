@@ -13,10 +13,12 @@ def es_correo_institucional(correo):
 
     Acepta el dominio exacto o un subdominio (por ejemplo alumno.upc.edu.pe).
     """
-    if not correo or "@" not in correo:
+    if not correo or correo.count("@") != 1 or any(caracter.isspace() for caracter in correo):
         return False
-    dominio = correo.rsplit("@", 1)[1].lower().strip()
-    for permitido in DOMINIOS_PERMITIDOS:
-        if dominio == permitido or dominio.endswith("." + permitido):
-            return True
-    return False
+    usuario, dominio = correo.lower().split("@", 1)
+    if not usuario or not dominio:
+        return False
+    return any(
+        dominio == permitido or dominio.endswith("." + permitido)
+        for permitido in DOMINIOS_PERMITIDOS
+    )

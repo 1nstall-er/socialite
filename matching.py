@@ -8,13 +8,14 @@ serializables para Jinja2 o JSON.
 from __future__ import annotations
 
 from collections import defaultdict
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from enum import Enum
+from heapq import nsmallest
 from math import isfinite
 from statistics import fmean
-from typing import Iterable, Mapping, Protocol, Sequence, TypedDict, cast
+from typing import Protocol, TypedDict, cast
 from unicodedata import category, normalize
-
 
 PESO_CURSOS = 0.50
 PESO_HORARIOS = 0.30
@@ -96,6 +97,16 @@ class PerfilPreparado(TypedDict):
     tiene_cursos: bool
     tiene_horarios: bool
     tiene_intereses: bool
+
+
+class RankingPaginado(TypedDict):
+    items: list[dict[str, object]]
+    pagina: int
+    por_pagina: int
+    total: int
+    paginas: int
+    tiene_anterior: bool
+    tiene_siguiente: bool
 
 
 @dataclass(frozen=True, slots=True)
@@ -811,51 +822,59 @@ def calcular_afinidad_grupo(
     }
 
 
-def rankear_candidatos(
-    usuario: UsuarioCompatible,
-    candidatos: Iterable[UsuarioCompatible],
-    afinidad_minima: int | float = 0,
-) -> list[dict[str, object]]:
-    """Prepara una vez por candidato y ordena de forma estable."""
-    minimo = _limitar(float(afinidad_minima) / 100)
-    resultados: list[dict[str, object]] = []
-    perfil_usuario = preparar_perfil(usuario)
-    for candidato in candidatos:
-        resultado = calcular_afinidad(
-            usuario,
-            candidato,
-            perfil_usuario=perfil_usuario,
-            perfil_candidato=preparar_perfil(candidato),
-        )
-        if cast(float, resultado["score"]) < minimo:
-            continue
-        resultados.append({"usuario": candidato, **resultado})
-    return ordenar_candidatos(resultados)
-
-
-def score(
-    mismo_curso: bool, horas_compartidas: int | float, intereses_comunes: int
-) -> float:
-    """Compatibilidad con la API inicial; devuelve un valor entre 0 y 1."""
-    cursos = 1.0 if mismo_curso else 0.0
-    horarios = _limitar(float(horas_compartidas) / 2)
-    intereses = _limitar(float(intereses_comunes) / 3)
-    return round(
-        cursos * PESO_CURSOS + horarios * PESO_HORARIOS + intereses * PESO_INTERESES,
-        4,
+def _clave_ranking(candidato: dict[str, object]) -> tuple[float, str, int]:
+    usuario = candidato["usuario"]
+    return (
+        -cast(float, candidato["score"]),
+        normalizar_texto(getattr(usuario, "nombre", "")),
+        int(getattr(usuario, "id", 0) or 0),
     )
 
 
-def ordenar_candidatos(
-    candidatos: Iterable[dict[str, object]],
-) -> list[dict[str, object]]:
-    """Orden descendente con desempate determinista por nombre e id."""
-    def clave(candidato: dict[str, object]) -> tuple[float, str, int]:
-        usuario = candidato["usuario"]
-        return (
-            -cast(float, candidato["score"]),
-            normalizar_texto(getattr(usuario, "nombre", "")),
-            int(getattr(usuario, "id", 0) or 0),
-        )
+def rankear_candidatos_paginado(
+    usuario: UsuarioCompatible,
+    candidatos: Iterable[UsuarioCompatible],
+    afinidad_minima: float = 0,
+    pagina: int = 1,
+    por_pagina: int = 18,
+) -> RankingPaginado:
+    """Calcula únicamente el prefijo ordenado necesario para la página.
 
-    return sorted(candidatos, key=clave)
+    Mantiene los resultados en ``O(pagina * por_pagina)`` y evita ordenar toda
+    la colección cuando se consultan las primeras páginas. Cada afinidad sí se
+    evalúa para conservar un total y un orden exactos.
+    """
+    minimo = _limitar(float(afinidad_minima) / 100)
+    pagina_solicitada = max(int(pagina), 1)
+    limite = max(int(por_pagina), 1)
+    hasta = pagina_solicitada * limite
+    perfil_usuario = preparar_perfil(usuario)
+    total = 0
+
+    def resultados_validos() -> Iterable[dict[str, object]]:
+        nonlocal total
+        for candidato in candidatos:
+            resultado = calcular_afinidad(
+                usuario,
+                candidato,
+                perfil_usuario=perfil_usuario,
+                perfil_candidato=preparar_perfil(candidato),
+            )
+            if cast(float, resultado["score"]) < minimo:
+                continue
+            total += 1
+            yield {"usuario": candidato, **resultado}
+
+    mejores = nsmallest(hasta, resultados_validos(), key=_clave_ranking)
+    paginas = max((total + limite - 1) // limite, 1)
+    pagina_real = min(pagina_solicitada, paginas)
+    inicio = (pagina_real - 1) * limite
+    return {
+        "items": mejores[inicio : inicio + limite],
+        "pagina": pagina_real,
+        "por_pagina": limite,
+        "total": total,
+        "paginas": paginas,
+        "tiene_anterior": pagina_real > 1,
+        "tiene_siguiente": pagina_real < paginas,
+    }

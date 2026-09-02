@@ -7,7 +7,11 @@ from PIL import Image
 from sqlalchemy import event
 
 from app import create_app
-from matching import calcular_afinidad, minutos_compartidos
+from matching import (
+    calcular_afinidad,
+    minutos_compartidos,
+    rankear_candidatos_paginado,
+)
 from models import (
     CampusUPC,
     CarreraUPC,
@@ -74,6 +78,9 @@ class SocialiteTestCase(unittest.TestCase):
 
     def test_registro_requiere_correo_upc_y_guarda_password_seguro(self):
         respuesta = self.registrar(correo="ana@gmail.com")
+        self.assertIn("Usa tu correo institucional", respuesta.get_data(as_text=True))
+
+        respuesta = self.registrar(correo="ana@externo.com@upc.edu.pe")
         self.assertIn("Usa tu correo institucional", respuesta.get_data(as_text=True))
 
         respuesta = self.registrar()
@@ -324,6 +331,32 @@ class SocialiteTestCase(unittest.TestCase):
         self.assertIsNone(resultado["probabilidad_emparejamiento"])
         self.assertEqual(resultado["componentes"], {})
 
+    def test_ranking_paginado_es_estable_y_ajusta_paginas_fuera_de_rango(self):
+        principal = Usuario(nombre="Principal", correo_institucional="p@upc.edu.pe")
+        candidatos = [
+            Usuario(id=indice, nombre=nombre, correo_institucional=f"{indice}@upc.edu.pe")
+            for indice, nombre in enumerate(
+                ["Eva", "Bruno", "Diana", "Ana", "Carla"], start=1
+            )
+        ]
+
+        segunda = rankear_candidatos_paginado(
+            principal, candidatos, pagina=2, por_pagina=2
+        )
+        self.assertEqual(segunda["total"], 5)
+        self.assertEqual(
+            [item["usuario"].nombre for item in segunda["items"]],
+            ["Carla", "Diana"],
+        )
+
+        ultima = rankear_candidatos_paginado(
+            principal, candidatos, pagina=99, por_pagina=2
+        )
+        self.assertEqual(ultima["pagina"], 3)
+        self.assertEqual(
+            [item["usuario"].nombre for item in ultima["items"]], ["Eva"]
+        )
+
     def test_matching_entrega_desglose_explicable(self):
         with self.app.app_context():
             curso = Curso(codigo="SW201", nombre="Programacion Web")
@@ -423,6 +456,7 @@ class SocialiteTestCase(unittest.TestCase):
         respuesta = self.client.get("/")
         self.assertEqual(respuesta.headers["X-Frame-Options"], "DENY")
         self.assertIn("frame-ancestors 'none'", respuesta.headers["Content-Security-Policy"])
+        self.assertNotIn("unsafe-inline", respuesta.headers["Content-Security-Policy"])
 
     def test_matching_evitar_n_mas_uno_al_crecer_candidatos(self):
         with self.app.app_context():
@@ -465,7 +499,9 @@ class SocialiteTestCase(unittest.TestCase):
             event.remove(motor, "before_cursor_execute", registrar_consulta)
 
         self.assertEqual(respuesta.status_code, 200)
-        self.assertLessEqual(len(consultas), 8)
+        # Es un número fijo aunque crezca la cantidad de candidatos. Las
+        # colecciones se cargan por separado para evitar un producto cartesiano.
+        self.assertLessEqual(len(consultas), 12)
 
     def test_rutas_sin_template_entregan_contrato_json(self):
         self.registrar()

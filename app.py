@@ -28,7 +28,7 @@ from matching import (
     calcular_afinidad,
     calcular_afinidad_grupo,
     preparar_perfil,
-    rankear_candidatos,
+    rankear_candidatos_paginado,
 )
 from media import eliminar_avatar, guardar_avatar
 from models import (
@@ -77,7 +77,6 @@ from queries import (
     obtener_grupo,
     usuario_para_matching,
 )
-
 
 TIPOS_GRUPO = ("estudio", "social")
 DIAS = ("Lunes", "Martes", "Miercoles", "Jueves", "Viernes", "Sabado")
@@ -236,7 +235,7 @@ def create_app(test_config=None):
         respuesta.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
         respuesta.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()"
         respuesta.headers["Content-Security-Policy"] = (
-            "default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; "
+            "default-src 'self'; img-src 'self' data:; style-src 'self'; "
             "script-src 'self'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'"
         )
         if g.get("usuario") and request.endpoint != "avatar":
@@ -293,8 +292,13 @@ def create_app(test_config=None):
         )
         usuario_actual = usuario_para_matching(g.usuario.id)
         candidatos = candidatos_para(usuario_actual.id, busqueda, curso_id)
-        resultados = rankear_candidatos(usuario_actual, candidatos, afinidad)
-        paginacion = paginacion_contexto(resultados, pagina, por_pagina)
+        paginacion = rankear_candidatos_paginado(
+            usuario_actual,
+            candidatos,
+            afinidad_minima=afinidad,
+            pagina=pagina,
+            por_pagina=por_pagina,
+        )
         conexiones = conexiones_con_candidatos(
             usuario_actual.id,
             [resultado["usuario"].id for resultado in paginacion["items"]],
