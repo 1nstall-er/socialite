@@ -34,17 +34,53 @@ agrega `contrato`, listo para el nuevo frontend:
 
 - `contrato.resultados[]`
   - `usuario`: `id`, `nombre`, `iniciales`, `carrera`, `ciclo`, `intereses`,
-    `cursos`, `horarios`, `perfil_completo`.
+    `cursos`, `horarios`, `perfil_completo`, `perfil_upc` y
+    `participaciones_upc`.
   - `porcentaje`: afinidad final entre 0 y 100.
   - `confianza`: porcentaje de senales disponibles para calcularla.
   - `razones[]`: `tipo`, `titulo`, `detalle`.
   - `componentes.cursos|horarios|intereses`: `valor`, `puntos`, `peso`.
+  - Cuando ambos perfiles tienen datos suficientes se agregan, sin romper las
+    claves anteriores: `campus`, `contexto_academico`, `estilo_objetivo`,
+    `vida_universitaria` y `metas_curso`.
+  - `contexto_upc`: evidencia estructurada de las coincidencias UPC usadas.
   - `horas`, `minutos`, `cursos`, `intereses`.
 - `contrato.paginacion`.
 - `contrato.filtros`: `q`, `curso`, `afinidad`.
 
 Query params admitidos: `q`, `curso`, `afinidad`, `pagina`, `por_pagina`.
 El mismo contrato esta disponible como JSON en `GET /api/v1/companeros`.
+
+## `GET /perfil` → `perfil.html`
+
+Además de las variables actuales, entrega:
+
+- `perfil.perfil_upc`: campus, facultad, carrera normalizada, modalidad, objetivo, estilo de
+  estudio, disponibilidad para Viernes Cultural, movilidad entre campus y
+  espacio preferido.
+- `perfil.participaciones_upc[]`: tipo, nombre, rol, campus, periodo, créditos
+  confirmados y estado.
+- `perfil.creditos_extraacademicos`: `confirmados`, `requeridos` y
+  `pendientes`.
+- `perfil.metas_curso[]`: curso, rol de estudio, prioridad, intento y si busca
+  equipo.
+- `catalogo_upc`: opciones de enums y los espacios oficiales disponibles.
+
+El mismo contrato privado está disponible en `GET /api/v1/perfil`. El catálogo
+público puede obtenerse por separado en `GET /api/v1/catalogo-upc`.
+
+Formularios POST listos para integrar:
+
+- `/perfil/upc`: `campus`, `facultad`, `carrera_upc_id`, `modalidad`, `objetivo`,
+  `estilo_estudio`, `viernes_cultural_disponible`, `acepta_intercampus` y
+  `espacio_preferido_id`.
+- `/perfil/participaciones`: `tipo`, `nombre`, `rol`, `campus`, `periodo`,
+  `creditos_confirmados` y `activa`.
+- `/perfil/participaciones/<id>/eliminar`.
+- `/perfil/cursos/<curso_id>/meta`: `rol`, `prioridad`, `intento` y
+  `busca_equipo`.
+
+Todos los POST deben incluir `csrf_token`.
 
 ## `GET /personas/<id>` → `persona.html`
 

@@ -19,6 +19,7 @@ from flask import (
     url_for,
 )
 from jinja2 import TemplateNotFound
+from sqlalchemy.exc import IntegrityError
 
 from auth import es_correo_institucional
 from matching import (
@@ -27,8 +28,31 @@ from matching import (
     preparar_perfil,
     rankear_candidatos,
 )
-from models import Conexion, Curso, Grupo, Horario, Usuario, db
+from models import (
+    CampusUPC,
+    CarreraUPC,
+    Conexion,
+    Curso,
+    EspacioUPC,
+    EstiloEstudio,
+    FacultadUPC,
+    Grupo,
+    Horario,
+    MetaCursoUPC,
+    ModalidadUPC,
+    ObjetivoSocialite,
+    ParticipacionUPC,
+    PerfilUPC,
+    RolActividadUPC,
+    RolCursoUPC,
+    TipoActividadUPC,
+    Usuario,
+    convertir_enum,
+    db,
+    sincronizar_catalogo_upc,
+)
 from presenters import (
+    catalogo_upc_contexto,
     conexion_contexto,
     curso_contexto,
     grupo_contexto,
@@ -44,6 +68,7 @@ from queries import (
     grupos_de_usuario,
     grupos_filtrados,
     obtener_grupo,
+    usuario_para_matching,
 )
 
 
@@ -96,6 +121,23 @@ def _entero_acotado(valor, predeterminado, minimo, maximo):
     return min(max(numero, minimo), maximo)
 
 
+def _booleano(valor, predeterminado=False):
+    if valor is None:
+        return predeterminado
+    return str(valor).strip().lower() in {"1", "true", "si", "on"}
+
+
+def _booleano_opcional(valor):
+    if valor is None or str(valor).strip() == "":
+        return None
+    normalizado = str(valor).strip().lower()
+    if normalizado in {"1", "true", "si", "on"}:
+        return True
+    if normalizado in {"0", "false", "no", "off"}:
+        return False
+    raise ValueError("El valor booleano debe ser si o no")
+
+
 def _destino_seguro(valor, predeterminado):
     if valor and valor.startswith("/") and not valor.startswith("//"):
         return valor
@@ -125,6 +167,7 @@ def create_app(test_config=None):
         SESSION_COOKIE_SECURE=os.getenv("COOKIE_SECURE", "0") == "1",
         PERMANENT_SESSION_LIFETIME=timedelta(hours=12),
         MAX_CONTENT_LENGTH=1024 * 1024,
+        SYNC_UPC_CATALOG=True,
     )
     if test_config:
         app.config.update(test_config)
@@ -141,6 +184,8 @@ def create_app(test_config=None):
     db.init_app(app)
     with app.app_context():
         db.create_all()
+        if app.config["SYNC_UPC_CATALOG"]:
+            sincronizar_catalogo_upc()
 
     @app.before_request
     def cargar_usuario():
@@ -185,6 +230,19 @@ def create_app(test_config=None):
                 raise
             return jsonify({"template_pendiente": template, **contrato})
 
+    def contexto_catalogo_upc():
+        espacios = (
+            EspacioUPC.query.filter_by(activo=True)
+            .order_by(EspacioUPC.campus, EspacioUPC.tipo, EspacioUPC.nombre)
+            .all()
+        )
+        carreras = (
+            CarreraUPC.query.filter_by(activa=True)
+            .order_by(CarreraUPC.facultad, CarreraUPC.nombre)
+            .all()
+        )
+        return catalogo_upc_contexto(espacios, carreras)
+
     def contexto_companeros():
         busqueda = request.args.get("q", "").strip()
         curso_id = request.args.get("curso", type=int)
@@ -193,11 +251,12 @@ def create_app(test_config=None):
         por_pagina = _entero_acotado(
             request.args.get("por_pagina"), 18, 1, MAXIMO_POR_PAGINA
         )
-        candidatos = candidatos_para(g.usuario.id, busqueda, curso_id)
-        resultados = rankear_candidatos(g.usuario, candidatos, afinidad)
+        usuario_actual = usuario_para_matching(g.usuario.id)
+        candidatos = candidatos_para(usuario_actual.id, busqueda, curso_id)
+        resultados = rankear_candidatos(usuario_actual, candidatos, afinidad)
         paginacion = paginacion_contexto(resultados, pagina, por_pagina)
         conexiones = conexiones_con_candidatos(
-            g.usuario.id,
+            usuario_actual.id,
             [resultado["usuario"].id for resultado in paginacion["items"]],
         )
         contrato = {
@@ -378,8 +437,152 @@ def create_app(test_config=None):
         return render_template(
             "perfil.html",
             dias=DIAS,
-            perfil=usuario_contexto(g.usuario, incluir_email=True),
+            perfil=usuario_contexto(
+                g.usuario, incluir_email=True, incluir_privado=True
+            ),
+            catalogo_upc=contexto_catalogo_upc(),
         )
+
+    @app.get("/api/v1/catalogo-upc")
+    def api_catalogo_upc():
+        return jsonify(contexto_catalogo_upc())
+
+    @app.get("/api/v1/perfil")
+    @login_required
+    def api_perfil():
+        return jsonify(
+            {
+                "perfil": usuario_contexto(
+                    g.usuario, incluir_email=True, incluir_privado=True
+                ),
+                "catalogo_upc": contexto_catalogo_upc(),
+            }
+        )
+
+    @app.post("/perfil/upc")
+    @login_required
+    def actualizar_perfil_upc():
+        try:
+            campus = convertir_enum(CampusUPC, request.form.get("campus"))
+            if campus is None:
+                raise ValueError("Selecciona un campus UPC")
+            facultad = convertir_enum(FacultadUPC, request.form.get("facultad"))
+            carrera_valor = request.form.get("carrera_upc_id", "").strip()
+            carrera_id = int(carrera_valor) if carrera_valor else None
+            carrera_upc = db.session.get(CarreraUPC, carrera_id) if carrera_id else None
+            if carrera_id and (carrera_upc is None or not carrera_upc.activa):
+                raise ValueError("La carrera UPC seleccionada no esta disponible")
+            if carrera_upc and facultad is None:
+                facultad = carrera_upc.facultad
+            modalidad = convertir_enum(ModalidadUPC, request.form.get("modalidad"))
+            objetivo = convertir_enum(
+                ObjetivoSocialite, request.form.get("objetivo")
+            )
+            estilo = convertir_enum(
+                EstiloEstudio, request.form.get("estilo_estudio")
+            )
+            espacio_valor = request.form.get("espacio_preferido_id", "").strip()
+            espacio_id = int(espacio_valor) if espacio_valor else None
+            espacio = db.session.get(EspacioUPC, espacio_id) if espacio_id else None
+            if espacio_id and (espacio is None or not espacio.activo):
+                raise ValueError("El espacio UPC seleccionado no esta disponible")
+
+            perfil_upc = g.usuario.perfil_upc or PerfilUPC(usuario=g.usuario, campus=campus)
+            perfil_upc.campus = campus
+            perfil_upc.facultad = facultad
+            perfil_upc.carrera_upc = carrera_upc
+            perfil_upc.modalidad = modalidad
+            perfil_upc.objetivo = objetivo
+            perfil_upc.estilo_estudio = estilo
+            perfil_upc.viernes_cultural_disponible = _booleano_opcional(
+                request.form.get("viernes_cultural_disponible")
+            )
+            perfil_upc.acepta_intercampus = _booleano(
+                request.form.get("acepta_intercampus")
+            )
+            perfil_upc.espacio_preferido = espacio
+            perfil_upc.validar_coherencia()
+            db.session.add(perfil_upc)
+            db.session.commit()
+            flash("Contexto UPC actualizado.", "success")
+        except ValueError as error:
+            db.session.rollback()
+            flash(str(error), "error")
+        return redirect(url_for("perfil"))
+
+    @app.post("/perfil/participaciones")
+    @login_required
+    def agregar_participacion_upc():
+        try:
+            tipo = convertir_enum(TipoActividadUPC, request.form.get("tipo"))
+            rol = convertir_enum(RolActividadUPC, request.form.get("rol"))
+            campus = convertir_enum(CampusUPC, request.form.get("campus"))
+            if tipo is None:
+                raise ValueError("Selecciona el tipo de actividad UPC")
+            participacion = ParticipacionUPC(
+                usuario=g.usuario,
+                tipo=tipo,
+                nombre=request.form.get("nombre", ""),
+                rol=rol or RolActividadUPC.PARTICIPANTE,
+                campus=campus,
+                periodo=request.form.get("periodo", ""),
+                creditos_confirmados=int(
+                    request.form.get("creditos_confirmados", 0)
+                ),
+                activa=_booleano(request.form.get("activa"), True),
+            )
+            db.session.add(participacion)
+            db.session.commit()
+            flash("Actividad UPC agregada.", "success")
+        except ValueError as error:
+            db.session.rollback()
+            flash(str(error), "error")
+        except IntegrityError:
+            db.session.rollback()
+            flash("Esa actividad ya esta registrada para el periodo.", "info")
+        return redirect(url_for("perfil"))
+
+    @app.post("/perfil/participaciones/<int:participacion_id>/eliminar")
+    @login_required
+    def eliminar_participacion_upc(participacion_id):
+        participacion = db.session.get(ParticipacionUPC, participacion_id)
+        if participacion is None:
+            abort(404)
+        if participacion.usuario_id != g.usuario.id:
+            abort(403)
+        db.session.delete(participacion)
+        db.session.commit()
+        flash("Actividad UPC eliminada.", "info")
+        return redirect(url_for("perfil"))
+
+    @app.post("/perfil/cursos/<int:curso_id>/meta")
+    @login_required
+    def actualizar_meta_curso_upc(curso_id):
+        curso = db.session.get(Curso, curso_id)
+        if curso is None:
+            abort(404)
+        if curso not in g.usuario.cursos:
+            abort(403)
+        try:
+            rol = convertir_enum(RolCursoUPC, request.form.get("rol"))
+            if rol is None:
+                raise ValueError("Selecciona una meta para el curso")
+            meta = MetaCursoUPC.query.filter_by(
+                usuario_id=g.usuario.id, curso_id=curso.id
+            ).one_or_none()
+            if meta is None:
+                meta = MetaCursoUPC(usuario=g.usuario, curso=curso, rol=rol)
+            meta.rol = rol
+            meta.prioridad = int(request.form.get("prioridad", 3))
+            meta.intento = int(request.form.get("intento", 1))
+            meta.busca_equipo = _booleano(request.form.get("busca_equipo"), True)
+            db.session.add(meta)
+            db.session.commit()
+            flash("Meta del curso actualizada.", "success")
+        except (TypeError, ValueError) as error:
+            db.session.rollback()
+            flash(str(error), "error")
+        return redirect(url_for("perfil"))
 
     @app.post("/perfil/cursos")
     @login_required

@@ -3,7 +3,28 @@
 from sqlalchemy import or_, select
 from sqlalchemy.orm import joinedload, selectinload
 
-from models import Conexion, Curso, Grupo, Usuario, db
+from models import Conexion, Curso, Grupo, PerfilUPC, Usuario, db
+
+
+def usuario_para_matching(usuario_id):
+    """Carga todas las senales del usuario actual en una sola consulta.
+
+    El join de colecciones se limita a un unico usuario; evita cinco lecturas
+    perezosas sin producir el producto cartesiano de todos los candidatos.
+    """
+    sentencia = (
+        select(Usuario)
+        .where(Usuario.id == usuario_id)
+        .options(
+            joinedload(Usuario.cursos),
+            joinedload(Usuario.horarios),
+            joinedload(Usuario.perfil_upc).joinedload(PerfilUPC.espacio_preferido),
+            joinedload(Usuario.participaciones_upc),
+            joinedload(Usuario.metas_curso),
+        )
+        .execution_options(populate_existing=True)
+    )
+    return db.session.execute(sentencia).scalars().unique().one()
 
 
 def candidatos_para(usuario_id, busqueda="", curso_id=None):
@@ -14,7 +35,13 @@ def candidatos_para(usuario_id, busqueda="", curso_id=None):
     sentencia = (
         select(Usuario)
         .where(Usuario.id != usuario_id)
-        .options(selectinload(Usuario.cursos), selectinload(Usuario.horarios))
+        .options(
+            selectinload(Usuario.cursos),
+            selectinload(Usuario.horarios),
+            joinedload(Usuario.perfil_upc).joinedload(PerfilUPC.espacio_preferido),
+            selectinload(Usuario.participaciones_upc),
+            selectinload(Usuario.metas_curso),
+        )
     )
     if busqueda:
         patron = f"%{busqueda.strip()}%"
@@ -36,8 +63,16 @@ def grupos_filtrados(tipo="", curso_id=None, dia="", busqueda=""):
         joinedload(Grupo.curso),
         joinedload(Grupo.creador).selectinload(Usuario.cursos),
         joinedload(Grupo.creador).selectinload(Usuario.horarios),
+        joinedload(Grupo.creador)
+        .joinedload(Usuario.perfil_upc)
+        .joinedload(PerfilUPC.espacio_preferido),
+        joinedload(Grupo.creador).selectinload(Usuario.participaciones_upc),
         selectinload(Grupo.miembros).selectinload(Usuario.cursos),
         selectinload(Grupo.miembros).selectinload(Usuario.horarios),
+        selectinload(Grupo.miembros)
+        .joinedload(Usuario.perfil_upc)
+        .joinedload(PerfilUPC.espacio_preferido),
+        selectinload(Grupo.miembros).selectinload(Usuario.participaciones_upc),
     )
     if tipo:
         sentencia = sentencia.where(Grupo.tipo == tipo)
@@ -66,8 +101,16 @@ def obtener_grupo(grupo_id):
             joinedload(Grupo.curso),
             joinedload(Grupo.creador).selectinload(Usuario.cursos),
             joinedload(Grupo.creador).selectinload(Usuario.horarios),
+            joinedload(Grupo.creador)
+            .joinedload(Usuario.perfil_upc)
+            .joinedload(PerfilUPC.espacio_preferido),
+            joinedload(Grupo.creador).selectinload(Usuario.participaciones_upc),
             selectinload(Grupo.miembros).selectinload(Usuario.cursos),
             selectinload(Grupo.miembros).selectinload(Usuario.horarios),
+            selectinload(Grupo.miembros)
+            .joinedload(Usuario.perfil_upc)
+            .joinedload(PerfilUPC.espacio_preferido),
+            selectinload(Grupo.miembros).selectinload(Usuario.participaciones_upc),
         )
     )
     return db.session.execute(sentencia).scalars().unique().first()
@@ -81,8 +124,16 @@ def grupos_de_usuario(usuario_id):
             joinedload(Grupo.curso),
             joinedload(Grupo.creador).selectinload(Usuario.cursos),
             joinedload(Grupo.creador).selectinload(Usuario.horarios),
+            joinedload(Grupo.creador)
+            .joinedload(Usuario.perfil_upc)
+            .joinedload(PerfilUPC.espacio_preferido),
+            joinedload(Grupo.creador).selectinload(Usuario.participaciones_upc),
             selectinload(Grupo.miembros).selectinload(Usuario.cursos),
             selectinload(Grupo.miembros).selectinload(Usuario.horarios),
+            selectinload(Grupo.miembros)
+            .joinedload(Usuario.perfil_upc)
+            .joinedload(PerfilUPC.espacio_preferido),
+            selectinload(Grupo.miembros).selectinload(Usuario.participaciones_upc),
         )
         .order_by(Grupo.creado_en.desc(), Grupo.id.desc())
     )
@@ -100,7 +151,20 @@ def conexion_entre(usuario_a_id, usuario_b_id):
                 & (Conexion.destinatario_id == usuario_a_id),
             )
         )
-        .options(joinedload(Conexion.remitente), joinedload(Conexion.destinatario))
+        .options(
+            joinedload(Conexion.remitente).selectinload(Usuario.cursos),
+            joinedload(Conexion.remitente).selectinload(Usuario.horarios),
+            joinedload(Conexion.remitente)
+            .joinedload(Usuario.perfil_upc)
+            .joinedload(PerfilUPC.espacio_preferido),
+            joinedload(Conexion.remitente).selectinload(Usuario.participaciones_upc),
+            joinedload(Conexion.destinatario).selectinload(Usuario.cursos),
+            joinedload(Conexion.destinatario).selectinload(Usuario.horarios),
+            joinedload(Conexion.destinatario)
+            .joinedload(Usuario.perfil_upc)
+            .joinedload(PerfilUPC.espacio_preferido),
+            joinedload(Conexion.destinatario).selectinload(Usuario.participaciones_upc),
+        )
     )
     return db.session.execute(sentencia).scalars().first()
 
@@ -114,7 +178,20 @@ def conexiones_de(usuario_id, estado=None):
                 Conexion.destinatario_id == usuario_id,
             )
         )
-        .options(joinedload(Conexion.remitente), joinedload(Conexion.destinatario))
+        .options(
+            joinedload(Conexion.remitente).selectinload(Usuario.cursos),
+            joinedload(Conexion.remitente).selectinload(Usuario.horarios),
+            joinedload(Conexion.remitente)
+            .joinedload(Usuario.perfil_upc)
+            .joinedload(PerfilUPC.espacio_preferido),
+            joinedload(Conexion.remitente).selectinload(Usuario.participaciones_upc),
+            joinedload(Conexion.destinatario).selectinload(Usuario.cursos),
+            joinedload(Conexion.destinatario).selectinload(Usuario.horarios),
+            joinedload(Conexion.destinatario)
+            .joinedload(Usuario.perfil_upc)
+            .joinedload(PerfilUPC.espacio_preferido),
+            joinedload(Conexion.destinatario).selectinload(Usuario.participaciones_upc),
+        )
         .order_by(Conexion.actualizada_en.desc(), Conexion.id.desc())
     )
     if estado:

@@ -1,29 +1,124 @@
-"""Motor de afinidad explicable y determinista para Socialite.
+"""Motor de afinidad puro, explicable y consciente del ecosistema UPC.
 
-La logica de este modulo es pura: no realiza consultas ni depende de Flask.
-Eso permite probarla de forma aislada y reutilizarla desde rutas HTML, una API
-o trabajos en segundo plano.
+No importa Flask ni ejecuta consultas. Recibe objetos compatibles con los
+protocolos declarados aqui, precalcula sus senales una vez y produce contratos
+serializables para Jinja2 o JSON.
 """
 
+from __future__ import annotations
+
 from collections import defaultdict
+from dataclasses import dataclass
+from enum import Enum
 from math import isfinite
+from statistics import fmean
+from typing import Iterable, Mapping, Protocol, Sequence, TypedDict, cast
 from unicodedata import category, normalize
 
 
 PESO_CURSOS = 0.50
 PESO_HORARIOS = 0.30
 PESO_INTERESES = 0.20
+PESO_CAMPUS = 0.12
+PESO_CONTEXTO_ACADEMICO = 0.08
+PESO_ESTILO_OBJETIVO = 0.08
+PESO_VIDA_UNIVERSITARIA = 0.06
+PESO_METAS_CURSO = 0.10
 MINUTOS_HORARIO_COMPLETO = 120
 INTERESES_PARA_PUNTAJE_COMPLETO = 3
+TOTAL_SENALES_POSIBLES = 8
 
 
-def normalizar_texto(valor):
+class CursoCompatible(Protocol):
+    id: int | None
+    codigo: str
+    nombre: str
+
+
+class HorarioCompatible(Protocol):
+    dia: str
+    hora_inicio: str
+    hora_fin: str
+
+
+class UsuarioCompatible(Protocol):
+    id: int | None
+    nombre: str
+    carrera: str | None
+    cursos: Sequence[CursoCompatible]
+    horarios: Sequence[HorarioCompatible]
+    lista_intereses: Sequence[str]
+
+
+class MetaCursoPreparada(TypedDict):
+    rol: str
+    prioridad: int
+    busca_equipo: bool
+
+
+class ContextoUPCPreparado(TypedDict):
+    campus: str | None
+    campus_etiqueta: str | None
+    facultad: str | None
+    facultad_etiqueta: str | None
+    carrera: str | None
+    carrera_etiqueta: str | None
+    modalidad: str | None
+    objetivo: str | None
+    estilo_estudio: str | None
+    viernes_cultural_disponible: bool | None
+    acepta_intercampus: bool
+    espacio_clave: str | None
+    espacio_nombre: str | None
+
+
+class PerfilPreparado(TypedDict):
+    cursos: dict[str, CursoCompatible]
+    intereses: dict[str, str]
+    intervalos: dict[str, list[tuple[int, int]]]
+    carrera: str
+    contexto_upc: ContextoUPCPreparado
+    actividades_tipos: dict[str, str]
+    actividades_nombres: dict[str, str]
+    metas_curso: dict[str, MetaCursoPreparada]
+    tiene_cursos: bool
+    tiene_horarios: bool
+    tiene_intereses: bool
+
+
+@dataclass(frozen=True, slots=True)
+class ComponenteAfinidad:
+    clave: str
+    valor: float
+    peso: float
+    disponible: bool = True
+
+
+def normalizar_texto(valor: object | None) -> str:
     """Normaliza texto para comparar sin depender de tildes o mayusculas."""
-    texto = normalize("NFKD", (valor or "").strip().casefold())
+    texto = normalize("NFKD", str(valor or "").strip().casefold())
     return "".join(caracter for caracter in texto if category(caracter) != "Mn")
 
 
-def _a_minutos(valor):
+def _valor_enum(valor: object | None) -> str | None:
+    if valor is None:
+        return None
+    if isinstance(valor, Enum):
+        return str(valor.value)
+    return str(valor)
+
+
+def _etiqueta_enum(valor: object | None) -> str | None:
+    if valor is None:
+        return None
+    return str(getattr(valor, "etiqueta", _valor_enum(valor)))
+
+
+def _clave_curso(curso: CursoCompatible) -> str:
+    return f"id:{curso.id}" if curso.id is not None else f"codigo:{normalizar_texto(curso.codigo)}"
+
+
+def _a_minutos(valor: str) -> int:
     partes = (valor or "").split(":")
     if len(partes) != 2:
         raise ValueError("La hora debe usar el formato HH:MM")
@@ -33,9 +128,11 @@ def _a_minutos(valor):
     return horas * 60 + minutos
 
 
-def _intervalos_por_dia(horarios):
+def _intervalos_por_dia(
+    horarios: Iterable[HorarioCompatible],
+) -> dict[str, list[tuple[int, int]]]:
     """Agrupa y fusiona bloques solapados en O(n log n)."""
-    por_dia = defaultdict(list)
+    por_dia: defaultdict[str, list[tuple[int, int]]] = defaultdict(list)
     for horario in horarios:
         try:
             inicio = _a_minutos(horario.hora_inicio)
@@ -45,9 +142,9 @@ def _intervalos_por_dia(horarios):
         if inicio < fin and horario.dia:
             por_dia[normalizar_texto(horario.dia)].append((inicio, fin))
 
-    fusionados = {}
+    fusionados: dict[str, list[tuple[int, int]]] = {}
     for dia, intervalos in por_dia.items():
-        resultado = []
+        resultado: list[tuple[int, int]] = []
         for inicio, fin in sorted(intervalos):
             if resultado and inicio <= resultado[-1][1]:
                 resultado[-1] = (resultado[-1][0], max(resultado[-1][1], fin))
@@ -57,20 +154,20 @@ def _intervalos_por_dia(horarios):
     return fusionados
 
 
-def minutos_compartidos(horarios_a, horarios_b):
-    """Calcula interseccion real con un recorrido lineal por cada dia.
-
-    Los bloques se fusionan primero para impedir que disponibilidades duplicadas
-    inflen el puntaje. Despues se usa un algoritmo de dos punteros O(n + m).
-    """
-    dias_a = _intervalos_por_dia(horarios_a)
-    dias_b = _intervalos_por_dia(horarios_b)
-    return _minutos_entre_intervalos(dias_a, dias_b)
+def minutos_compartidos(
+    horarios_a: Iterable[HorarioCompatible], horarios_b: Iterable[HorarioCompatible]
+) -> int:
+    """Calcula interseccion real con fusion y dos punteros O(n + m)."""
+    return _minutos_entre_intervalos(
+        _intervalos_por_dia(horarios_a), _intervalos_por_dia(horarios_b)
+    )
 
 
-def _minutos_entre_intervalos(dias_a, dias_b):
+def _minutos_entre_intervalos(
+    dias_a: Mapping[str, Sequence[tuple[int, int]]],
+    dias_b: Mapping[str, Sequence[tuple[int, int]]],
+) -> int:
     total = 0
-
     for dia in dias_a.keys() & dias_b.keys():
         bloques_a = dias_a[dia]
         bloques_b = dias_b[dia]
@@ -86,35 +183,118 @@ def _minutos_entre_intervalos(dias_a, dias_b):
     return total
 
 
-def preparar_perfil(usuario):
-    """Precalcula señales reutilizables durante un lote de comparaciones."""
+def _contexto_upc(usuario: UsuarioCompatible) -> ContextoUPCPreparado:
+    perfil = getattr(usuario, "perfil_upc", None)
+    if perfil is None:
+        return {
+            "campus": None,
+            "campus_etiqueta": None,
+            "facultad": None,
+            "facultad_etiqueta": None,
+            "carrera": None,
+            "carrera_etiqueta": None,
+            "modalidad": None,
+            "objetivo": None,
+            "estilo_estudio": None,
+            "viernes_cultural_disponible": None,
+            "acepta_intercampus": False,
+            "espacio_clave": None,
+            "espacio_nombre": None,
+        }
+    espacio = getattr(perfil, "espacio_preferido", None)
+    carrera = getattr(perfil, "carrera_upc", None)
     return {
-        "cursos": {curso.id: curso for curso in usuario.cursos},
-        "intereses": {
-            normalizar_texto(valor): valor for valor in usuario.lista_intereses
-        },
-        "intervalos": _intervalos_por_dia(usuario.horarios),
-        "tiene_cursos": bool(usuario.cursos),
-        "tiene_horarios": bool(usuario.horarios),
-        "tiene_intereses": bool(usuario.lista_intereses),
+        "campus": _valor_enum(getattr(perfil, "campus", None)),
+        "campus_etiqueta": _etiqueta_enum(getattr(perfil, "campus", None)),
+        "facultad": _valor_enum(getattr(perfil, "facultad", None)),
+        "facultad_etiqueta": _etiqueta_enum(getattr(perfil, "facultad", None)),
+        "carrera": getattr(carrera, "clave", None),
+        "carrera_etiqueta": getattr(carrera, "nombre", None),
+        "modalidad": _valor_enum(getattr(perfil, "modalidad", None)),
+        "objetivo": _valor_enum(getattr(perfil, "objetivo", None)),
+        "estilo_estudio": _valor_enum(getattr(perfil, "estilo_estudio", None)),
+        "viernes_cultural_disponible": getattr(
+            perfil, "viernes_cultural_disponible", None
+        ),
+        "acepta_intercampus": bool(getattr(perfil, "acepta_intercampus", False)),
+        "espacio_clave": getattr(espacio, "clave", None),
+        "espacio_nombre": getattr(espacio, "nombre", None),
     }
 
 
-def _cursos_comunes(perfil_usuario, perfil_candidato):
+def preparar_perfil(usuario: UsuarioCompatible) -> PerfilPreparado:
+    """Precalcula todas las senales reutilizables de un candidato."""
+    actividades_tipos: dict[str, str] = {}
+    actividades_nombres: dict[str, str] = {}
+    for participacion in getattr(usuario, "participaciones_upc", ()):
+        if not bool(getattr(participacion, "activa", True)):
+            continue
+        tipo = getattr(participacion, "tipo", None)
+        valor_tipo = _valor_enum(tipo)
+        if valor_tipo:
+            actividades_tipos[valor_tipo] = _etiqueta_enum(tipo) or valor_tipo
+        nombre = str(getattr(participacion, "nombre", "")).strip()
+        if nombre:
+            actividades_nombres[normalizar_texto(nombre)] = nombre
+
+    metas: dict[str, MetaCursoPreparada] = {}
+    for meta in getattr(usuario, "metas_curso", ()):
+        curso_id = getattr(meta, "curso_id", None)
+        clave = (
+            f"id:{curso_id}"
+            if curso_id is not None
+            else _clave_curso(curso)
+            if (curso := getattr(meta, "curso", None)) is not None
+            else ""
+        )
+        if clave:
+            metas[clave] = {
+                "rol": _valor_enum(getattr(meta, "rol", None)) or "practicar",
+                "prioridad": int(getattr(meta, "prioridad", 3)),
+                "busca_equipo": bool(getattr(meta, "busca_equipo", True)),
+            }
+
+    cursos = {_clave_curso(curso): curso for curso in usuario.cursos}
+    intereses = {
+        normalizar_texto(valor): valor for valor in usuario.lista_intereses
+    }
+    contexto_upc = _contexto_upc(usuario)
+    return {
+        "cursos": cursos,
+        "intereses": intereses,
+        "intervalos": _intervalos_por_dia(usuario.horarios),
+        "carrera": normalizar_texto(
+            contexto_upc["carrera_etiqueta"] or usuario.carrera
+        ),
+        "contexto_upc": contexto_upc,
+        "actividades_tipos": actividades_tipos,
+        "actividades_nombres": actividades_nombres,
+        "metas_curso": metas,
+        "tiene_cursos": bool(cursos),
+        "tiene_horarios": bool(usuario.horarios),
+        "tiene_intereses": bool(intereses),
+    }
+
+
+def _cursos_comunes(
+    perfil_usuario: PerfilPreparado, perfil_candidato: PerfilPreparado
+) -> list[CursoCompatible]:
     return [
         curso
-        for identificador, curso in perfil_candidato["cursos"].items()
-        if identificador in perfil_usuario["cursos"]
+        for clave, curso in perfil_candidato["cursos"].items()
+        if clave in perfil_usuario["cursos"]
     ]
 
 
-def _intereses_comunes(perfil_usuario, perfil_candidato):
+def _intereses_comunes(
+    perfil_usuario: PerfilPreparado, perfil_candidato: PerfilPreparado
+) -> list[str]:
     propios = perfil_usuario["intereses"]
     ajenos = perfil_candidato["intereses"]
     return [propios[clave] for clave in sorted(propios.keys() & ajenos.keys())]
 
 
-def _componente_cursos(cantidad):
+def _componente_cursos(cantidad: int) -> float:
     if cantidad <= 0:
         return 0.0
     if cantidad == 1:
@@ -122,22 +302,196 @@ def _componente_cursos(cantidad):
     return 1.0
 
 
-def _limitar(valor, minimo=0.0, maximo=1.0):
+def _limitar(valor: float, minimo: float = 0.0, maximo: float = 1.0) -> float:
     if not isfinite(valor):
         return minimo
     return min(max(valor, minimo), maximo)
 
 
-def calcular_afinidad(
-    usuario, candidato, perfil_usuario=None, perfil_candidato=None
-):
-    """Devuelve puntaje, componentes y razones listas para Jinja2.
+def _compatibilidad_campus(
+    propio: ContextoUPCPreparado, ajeno: ContextoUPCPreparado
+) -> tuple[float, dict[str, object]] | None:
+    if not propio["campus"] or not ajeno["campus"]:
+        return None
+    mismo_campus = propio["campus"] == ajeno["campus"]
+    mismo_espacio = bool(
+        propio["espacio_clave"]
+        and propio["espacio_clave"] == ajeno["espacio_clave"]
+    )
+    if mismo_campus:
+        valor = 1.0 if mismo_espacio else 0.90
+    elif propio["acepta_intercampus"] and ajeno["acepta_intercampus"]:
+        valor = 0.70
+    elif propio["acepta_intercampus"] or ajeno["acepta_intercampus"]:
+        valor = 0.40
+    else:
+        valor = 0.05
+    return valor, {
+        "mismo_campus": mismo_campus,
+        "mismo_espacio": mismo_espacio,
+        "campus": propio["campus_etiqueta"] if mismo_campus else None,
+        "espacio": propio["espacio_nombre"] if mismo_espacio else None,
+    }
 
-    Pesos del MVP:
-    - cursos en comun: 50 %
-    - disponibilidad compartida: 30 %
-    - intereses en comun: 20 %
-    """
+
+def _compatibilidad_academica(
+    usuario: PerfilPreparado, candidato: PerfilPreparado
+) -> tuple[float, str] | None:
+    propio = usuario["contexto_upc"]
+    ajeno = candidato["contexto_upc"]
+    misma_carrera = bool(
+        usuario["carrera"] and usuario["carrera"] == candidato["carrera"]
+    )
+    misma_facultad = bool(
+        propio["facultad"] and propio["facultad"] == ajeno["facultad"]
+    )
+    if not (usuario["carrera"] and candidato["carrera"]) and not (
+        propio["facultad"] and ajeno["facultad"]
+    ):
+        return None
+    if misma_carrera:
+        return 1.0, "misma_carrera"
+    if misma_facultad:
+        return 0.80, "misma_facultad"
+    objetivos_creativos = {"proyectos", "networking"}
+    if propio["objetivo"] in objetivos_creativos or ajeno["objetivo"] in objetivos_creativos:
+        return 0.60, "interdisciplinaria"
+    return 0.25, "facultades_distintas"
+
+
+def _compatibilidad_estilo_objetivo(
+    propio: ContextoUPCPreparado, ajeno: ContextoUPCPreparado
+) -> tuple[float, dict[str, bool]] | None:
+    valores: list[float] = []
+    objetivo_propio = propio["objetivo"]
+    objetivo_ajeno = ajeno["objetivo"]
+    if objetivo_propio is not None and objetivo_ajeno is not None:
+        objetivos = frozenset((objetivo_propio, objetivo_ajeno))
+        if len(objetivos) == 1:
+            valores.append(1.0)
+        else:
+            valores.append(
+                {
+                    frozenset(("estudiar", "proyectos")): 0.85,
+                    frozenset(("networking", "vida_universitaria")): 0.90,
+                    frozenset(("proyectos", "networking")): 0.80,
+                    frozenset(("estudiar", "vida_universitaria")): 0.55,
+                }.get(objetivos, 0.60)
+            )
+
+    estilos = {propio["estilo_estudio"], ajeno["estilo_estudio"]}
+    if None not in estilos:
+        if len(estilos) == 1:
+            valores.append(0.90)
+        elif estilos in (
+            {"practico", "explicativo"},
+            {"enfocado", "practico"},
+        ):
+            valores.append(1.0)
+        else:
+            valores.append(0.65)
+
+    viernes_compartido = (
+        propio["viernes_cultural_disponible"] is True
+        and ajeno["viernes_cultural_disponible"] is True
+    )
+    if (
+        propio["viernes_cultural_disponible"] is not None
+        and ajeno["viernes_cultural_disponible"] is not None
+    ):
+        valores.append(1.0 if viernes_compartido else 0.35)
+    if not valores:
+        return None
+    return fmean(valores), {
+        "mismo_objetivo": bool(
+            propio["objetivo"] and propio["objetivo"] == ajeno["objetivo"]
+        ),
+        "viernes_cultural": viernes_compartido,
+    }
+
+
+def _compatibilidad_actividades(
+    usuario: PerfilPreparado, candidato: PerfilPreparado
+) -> tuple[float, list[str], list[str]] | None:
+    tipos_a = usuario["actividades_tipos"]
+    tipos_b = candidato["actividades_tipos"]
+    nombres_a = usuario["actividades_nombres"]
+    nombres_b = candidato["actividades_nombres"]
+    if not tipos_a or not tipos_b:
+        return None
+    tipos_comunes = sorted(tipos_a.keys() & tipos_b.keys())
+    nombres_comunes = sorted(nombres_a.keys() & nombres_b.keys())
+    union_tipos = tipos_a.keys() | tipos_b.keys()
+    union_nombres = nombres_a.keys() | nombres_b.keys()
+    valor_tipos = len(tipos_comunes) / len(union_tipos) if union_tipos else 0.0
+    valor_nombres = len(nombres_comunes) / len(union_nombres) if union_nombres else 0.0
+    valor = valor_tipos * 0.70 + valor_nombres * 0.30
+    return (
+        valor,
+        [tipos_a[clave] for clave in tipos_comunes],
+        [nombres_a[clave] for clave in nombres_comunes],
+    )
+
+
+def _compatibilidad_metas_curso(
+    usuario: PerfilPreparado,
+    candidato: PerfilPreparado,
+    cursos: Sequence[CursoCompatible],
+) -> tuple[float, list[str]] | None:
+    roles_complementarios = {
+        frozenset(("ensenar", "reforzar")): 1.0,
+        frozenset(("ensenar", "practicar")): 0.90,
+        frozenset(("practicar",)): 0.90,
+        frozenset(("proyecto",)): 1.0,
+        frozenset(("reforzar",)): 0.80,
+        frozenset(("practicar", "reforzar")): 0.85,
+    }
+    valores: list[float] = []
+    codigos: list[str] = []
+    for curso in cursos:
+        clave = _clave_curso(curso)
+        propia = usuario["metas_curso"].get(clave)
+        ajena = candidato["metas_curso"].get(clave)
+        if not propia or not ajena:
+            continue
+        compatibilidad_rol = roles_complementarios.get(
+            frozenset((propia["rol"], ajena["rol"])), 0.55
+        )
+        cercania_prioridad = 1 - abs(propia["prioridad"] - ajena["prioridad"]) / 4
+        disposicion_equipo = 1.0 if propia["busca_equipo"] and ajena["busca_equipo"] else 0.40
+        valores.append(fmean((compatibilidad_rol, cercania_prioridad, disposicion_equipo)))
+        codigos.append(curso.codigo)
+    if not valores:
+        return None
+    return fmean(valores), codigos
+
+
+def _serializar_componentes(
+    componentes: Sequence[ComponenteAfinidad],
+) -> tuple[float, dict[str, dict[str, float]]]:
+    activos = [componente for componente in componentes if componente.disponible]
+    peso_total = sum(componente.peso for componente in activos)
+    if not activos or peso_total <= 0:
+        return 0.0, {}
+    total = sum(componente.valor * componente.peso for componente in activos) / peso_total
+    serializados = {
+        componente.clave: {
+            "valor": round(componente.valor, 4),
+            "puntos": round(componente.valor * componente.peso / peso_total * 100),
+            "peso": round(componente.peso / peso_total * 100),
+        }
+        for componente in activos
+    }
+    return round(_limitar(total), 4), serializados
+
+
+def calcular_afinidad(
+    usuario: UsuarioCompatible,
+    candidato: UsuarioCompatible,
+    perfil_usuario: PerfilPreparado | None = None,
+    perfil_candidato: PerfilPreparado | None = None,
+) -> dict[str, object]:
+    """Calcula afinidad base y activa contexto UPC solo cuando esta disponible."""
     perfil_usuario = perfil_usuario or preparar_perfil(usuario)
     perfil_candidato = perfil_candidato or preparar_perfil(candidato)
     cursos = _cursos_comunes(perfil_usuario, perfil_candidato)
@@ -146,27 +500,20 @@ def calcular_afinidad(
         perfil_usuario["intervalos"], perfil_candidato["intervalos"]
     )
 
-    valor_cursos = _componente_cursos(len(cursos))
-    valor_horarios = _limitar(minutos / MINUTOS_HORARIO_COMPLETO)
-    valor_intereses = _limitar(
-        len(intereses) / INTERESES_PARA_PUNTAJE_COMPLETO
-    )
-    total = (
-        valor_cursos * PESO_CURSOS
-        + valor_horarios * PESO_HORARIOS
-        + valor_intereses * PESO_INTERESES
-    )
-    total = round(_limitar(total), 4)
+    componentes: list[ComponenteAfinidad] = [
+        ComponenteAfinidad("cursos", _componente_cursos(len(cursos)), PESO_CURSOS),
+        ComponenteAfinidad(
+            "horarios", _limitar(minutos / MINUTOS_HORARIO_COMPLETO), PESO_HORARIOS
+        ),
+        ComponenteAfinidad(
+            "intereses",
+            _limitar(len(intereses) / INTERESES_PARA_PUNTAJE_COMPLETO),
+            PESO_INTERESES,
+        ),
+    ]
+    razones: list[dict[str, object]] = []
+    contexto_resultado: dict[str, object] = {}
 
-    senales_disponibles = sum(
-        (
-            perfil_usuario["tiene_cursos"] and perfil_candidato["tiene_cursos"],
-            perfil_usuario["tiene_horarios"] and perfil_candidato["tiene_horarios"],
-            perfil_usuario["tiene_intereses"]
-            and perfil_candidato["tiene_intereses"],
-        )
-    )
-    razones = []
     if cursos:
         razones.append(
             {
@@ -192,53 +539,134 @@ def calcular_afinidad(
             }
         )
 
+    upc_usuario = perfil_usuario["contexto_upc"]
+    upc_candidato = perfil_candidato["contexto_upc"]
+    campus = _compatibilidad_campus(upc_usuario, upc_candidato)
+    if campus:
+        valor_campus, detalle_campus = campus
+        componentes.append(
+            ComponenteAfinidad("campus", valor_campus, PESO_CAMPUS)
+        )
+        contexto_resultado["campus"] = detalle_campus
+        if detalle_campus["mismo_campus"]:
+            razones.append(
+                {
+                    "tipo": "campus",
+                    "titulo": f"Coinciden en Campus {detalle_campus['campus']}",
+                    "detalle": detalle_campus["espacio"]
+                    or "Encuentro presencial mas simple",
+                }
+            )
+
+    academica = _compatibilidad_academica(perfil_usuario, perfil_candidato)
+    if academica:
+        valor, tipo = academica
+        componentes.append(
+            ComponenteAfinidad("contexto_academico", valor, PESO_CONTEXTO_ACADEMICO)
+        )
+        contexto_resultado["contexto_academico"] = tipo
+        if tipo in {"misma_carrera", "misma_facultad", "interdisciplinaria"}:
+            etiqueta = {
+                "misma_carrera": "Misma carrera",
+                "misma_facultad": "Misma facultad",
+                "interdisciplinaria": "Conexion interdisciplinaria",
+            }[tipo]
+            razones.append(
+                {"tipo": "contexto_academico", "titulo": etiqueta, "detalle": "Contexto academico compatible"}
+            )
+
+    estilo = _compatibilidad_estilo_objetivo(upc_usuario, upc_candidato)
+    if estilo:
+        valor_estilo, detalle_estilo = estilo
+        componentes.append(
+            ComponenteAfinidad(
+                "estilo_objetivo", valor_estilo, PESO_ESTILO_OBJETIVO
+            )
+        )
+        contexto_resultado["estilo_objetivo"] = detalle_estilo
+        if detalle_estilo["viernes_cultural"]:
+            razones.append(
+                {
+                    "tipo": "viernes_cultural",
+                    "titulo": "Viernes Cultural disponible",
+                    "detalle": "Ambos pueden coincidir de 1:00 p. m. a 3:00 p. m.",
+                }
+            )
+
+    actividades = _compatibilidad_actividades(perfil_usuario, perfil_candidato)
+    if actividades:
+        valor, tipos, nombres = actividades
+        componentes.append(
+            ComponenteAfinidad("vida_universitaria", valor, PESO_VIDA_UNIVERSITARIA)
+        )
+        contexto_resultado["actividades_comunes"] = {"tipos": tipos, "nombres": nombres}
+        if tipos or nombres:
+            razones.append(
+                {
+                    "tipo": "vida_universitaria",
+                    "titulo": "Vida universitaria en comun",
+                    "detalle": ", ".join(nombres or tipos),
+                }
+            )
+
+    metas = _compatibilidad_metas_curso(perfil_usuario, perfil_candidato, cursos)
+    if metas:
+        valor, codigos = metas
+        componentes.append(ComponenteAfinidad("metas_curso", valor, PESO_METAS_CURSO))
+        contexto_resultado["metas_curso"] = codigos
+        razones.append(
+            {
+                "tipo": "metas_curso",
+                "titulo": "Metas de estudio compatibles",
+                "detalle": ", ".join(codigos),
+            }
+        )
+
+    total, componentes_serializados = _serializar_componentes(componentes)
+    senales_disponibles = sum(
+        (
+            perfil_usuario["tiene_cursos"] and perfil_candidato["tiene_cursos"],
+            perfil_usuario["tiene_horarios"] and perfil_candidato["tiene_horarios"],
+            perfil_usuario["tiene_intereses"] and perfil_candidato["tiene_intereses"],
+            campus is not None,
+            academica is not None,
+            estilo is not None,
+            actividades is not None,
+            metas is not None,
+        )
+    )
     return {
         "score": total,
         "porcentaje": round(total * 100),
-        "confianza": round(senales_disponibles / 3 * 100),
+        "confianza": round(senales_disponibles / TOTAL_SENALES_POSIBLES * 100),
         "cursos": cursos,
         "horas": round(minutos / 60, 1),
         "minutos": minutos,
         "intereses": intereses,
         "razones": razones,
-        "componentes": {
-            "cursos": {
-                "valor": round(valor_cursos, 4),
-                "puntos": round(valor_cursos * PESO_CURSOS * 100),
-                "peso": round(PESO_CURSOS * 100),
-            },
-            "horarios": {
-                "valor": round(valor_horarios, 4),
-                "puntos": round(valor_horarios * PESO_HORARIOS * 100),
-                "peso": round(PESO_HORARIOS * 100),
-            },
-            "intereses": {
-                "valor": round(valor_intereses, 4),
-                "puntos": round(valor_intereses * PESO_INTERESES * 100),
-                "peso": round(PESO_INTERESES * 100),
-            },
-        },
+        "componentes": componentes_serializados,
+        "contexto_upc": contexto_resultado,
     }
 
 
-def calcular_afinidad_grupo(usuario, grupo, perfil_usuario=None):
+def calcular_afinidad_grupo(
+    usuario: UsuarioCompatible, grupo: object, perfil_usuario: PerfilPreparado | None = None
+) -> dict[str, object]:
     """Afinidad usuario-grupo, normalizada a partir de curso y horario."""
     perfil_usuario = perfil_usuario or preparar_perfil(usuario)
-    mismo_curso = bool(
-        grupo.curso and grupo.curso.id in perfil_usuario["cursos"]
-    )
+    curso = getattr(grupo, "curso", None)
+    mismo_curso = bool(curso and _clave_curso(curso) in perfil_usuario["cursos"])
 
     class BloqueGrupo:
-        dia = grupo.dia
-        hora_inicio = grupo.hora_inicio
-        hora_fin = grupo.hora_fin
+        dia = str(getattr(grupo, "dia", ""))
+        hora_inicio = str(getattr(grupo, "hora_inicio", ""))
+        hora_fin = str(getattr(grupo, "hora_fin", ""))
 
     minutos = _minutos_entre_intervalos(
         perfil_usuario["intervalos"], _intervalos_por_dia([BloqueGrupo()])
     )
     valor_curso = 1.0 if mismo_curso else 0.0
     valor_horario = _limitar(minutos / MINUTOS_HORARIO_COMPLETO)
-    # Al no existir intereses de grupo, los pesos disponibles se renormalizan.
     total = (valor_curso * PESO_CURSOS + valor_horario * PESO_HORARIOS) / (
         PESO_CURSOS + PESO_HORARIOS
     )
@@ -252,10 +680,14 @@ def calcular_afinidad_grupo(usuario, grupo, perfil_usuario=None):
     }
 
 
-def rankear_candidatos(usuario, candidatos, afinidad_minima=0):
-    """Calcula una sola vez por candidato y ordena de forma estable."""
+def rankear_candidatos(
+    usuario: UsuarioCompatible,
+    candidatos: Iterable[UsuarioCompatible],
+    afinidad_minima: int | float = 0,
+) -> list[dict[str, object]]:
+    """Prepara una vez por candidato y ordena de forma estable."""
     minimo = _limitar(float(afinidad_minima) / 100)
-    resultados = []
+    resultados: list[dict[str, object]] = []
     perfil_usuario = preparar_perfil(usuario)
     for candidato in candidatos:
         resultado = calcular_afinidad(
@@ -264,32 +696,35 @@ def rankear_candidatos(usuario, candidatos, afinidad_minima=0):
             perfil_usuario=perfil_usuario,
             perfil_candidato=preparar_perfil(candidato),
         )
-        if resultado["score"] < minimo:
+        if cast(float, resultado["score"]) < minimo:
             continue
         resultados.append({"usuario": candidato, **resultado})
     return ordenar_candidatos(resultados)
 
 
-def score(mismo_curso, horas_compartidas, intereses_comunes):
+def score(
+    mismo_curso: bool, horas_compartidas: int | float, intereses_comunes: int
+) -> float:
     """Compatibilidad con la API inicial; devuelve un valor entre 0 y 1."""
     cursos = 1.0 if mismo_curso else 0.0
     horarios = _limitar(float(horas_compartidas) / 2)
     intereses = _limitar(float(intereses_comunes) / 3)
     return round(
-        cursos * PESO_CURSOS
-        + horarios * PESO_HORARIOS
-        + intereses * PESO_INTERESES,
+        cursos * PESO_CURSOS + horarios * PESO_HORARIOS + intereses * PESO_INTERESES,
         4,
     )
 
 
-def ordenar_candidatos(candidatos):
-    """Orden descendente por score con desempate determinista por nombre e id."""
-    return sorted(
-        candidatos,
-        key=lambda candidato: (
-            -candidato["score"],
-            normalizar_texto(candidato["usuario"].nombre),
-            candidato["usuario"].id or 0,
-        ),
-    )
+def ordenar_candidatos(
+    candidatos: Iterable[dict[str, object]],
+) -> list[dict[str, object]]:
+    """Orden descendente con desempate determinista por nombre e id."""
+    def clave(candidato: dict[str, object]) -> tuple[float, str, int]:
+        usuario = candidato["usuario"]
+        return (
+            -cast(float, candidato["score"]),
+            normalizar_texto(getattr(usuario, "nombre", "")),
+            int(getattr(usuario, "id", 0) or 0),
+        )
+
+    return sorted(candidatos, key=clave)

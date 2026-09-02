@@ -11,6 +11,10 @@ companeros y creen grupos dentro del campus. El MVP esta enfocado en la UPC.
 - Grupos sociales o de estudio con curso, horario, lugar y capacidad.
 - Opcion para unirse o salir de un grupo.
 - Matching transparente por cursos, horarios e intereses en comun.
+- Matching contextual por campus, facultad, vida universitaria y metas por
+  curso cuando ambos estudiantes completan esos datos.
+- Catalogo verificado de bibliotecas, cubiculos y espacios UPC.
+- Seguimiento de los cuatro creditos extraacademicos requeridos.
 - Interfaz adaptable a computadoras y celulares.
 
 ## Stack
@@ -32,6 +36,9 @@ Los contratos que debe consumir el frontend estan documentados en
 `docs/JINJA_CONTEXT.md`. Las rutas nuevas sin template responden JSON hasta que
 se agregue la plantilla correspondiente, sin cambiar el contrato.
 
+Los hechos institucionales, fuentes y decisiones de modelado se documentan en
+`docs/UPC_DOMAIN.md`.
+
 ## Ejecutar en local
 
 ```powershell
@@ -51,6 +58,13 @@ Para produccion, configura las variables `SECRET_KEY` y `DATABASE_URL`.
 
 ```powershell
 python -m unittest discover -s tests -v
+```
+
+Para validar el tipado estricto del motor puro:
+
+```powershell
+pip install -r requirements-dev.txt
+python -m mypy --strict matching.py
 ```
 
 ## Alcance pendiente

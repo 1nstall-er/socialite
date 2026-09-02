@@ -4,7 +4,27 @@ from sqlalchemy import event
 
 from app import create_app
 from matching import calcular_afinidad, minutos_compartidos
-from models import Conexion, Curso, Grupo, Horario, Usuario, db
+from models import (
+    CampusUPC,
+    CarreraUPC,
+    Conexion,
+    Curso,
+    EspacioUPC,
+    EstiloEstudio,
+    FacultadUPC,
+    Grupo,
+    Horario,
+    MetaCursoUPC,
+    ObjetivoSocialite,
+    ParticipacionUPC,
+    PerfilUPC,
+    RolActividadUPC,
+    RolCursoUPC,
+    TipoActividadUPC,
+    Usuario,
+    db,
+    sincronizar_catalogo_upc,
+)
 
 
 class SocialiteTestCase(unittest.TestCase):
@@ -310,6 +330,199 @@ class SocialiteTestCase(unittest.TestCase):
 
         respuesta = self.client.get("/grupos/nuevo")
         self.assertEqual(respuesta.get_json()["limites"]["max_miembros"], 12)
+
+    def test_catalogo_upc_verificado_es_idempotente(self):
+        respuesta = self.client.get("/api/v1/catalogo-upc")
+        catalogo = respuesta.get_json()
+        self.assertEqual(respuesta.status_code, 200)
+        self.assertEqual(
+            {campus["valor"] for campus in catalogo["campus"]},
+            {"monterrico", "villa", "san_isidro", "san_miguel"},
+        )
+        self.assertEqual(len(catalogo["facultades"]), 13)
+        self.assertEqual(len(catalogo["carreras"]), 59)
+        self.assertIn(
+            "Ingeniería de Software",
+            {carrera["nombre"] for carrera in catalogo["carreras"]},
+        )
+        self.assertEqual(catalogo["viernes_cultural"]["hora_inicio"], "13:00")
+        self.assertEqual(catalogo["creditos_extraacademicos_requeridos"], 4)
+
+        with self.app.app_context():
+            total_inicial = EspacioUPC.query.count()
+            self.assertEqual(total_inicial, 13)
+            self.assertEqual(sincronizar_catalogo_upc(), 0)
+            self.assertEqual(EspacioUPC.query.count(), total_inicial)
+            cubiculo = EspacioUPC.query.filter_by(
+                clave="cubiculos-san-isidro-b"
+            ).one()
+            self.assertEqual(cubiculo.aforo_maximo, 7)
+            self.assertEqual(cubiculo.max_minutos_diarios, 120)
+
+    def test_perfil_upc_y_vida_universitaria_exponen_contrato_privado(self):
+        self.registrar()
+        with self.app.app_context():
+            espacio_id = EspacioUPC.query.filter_by(
+                clave="cubiculos-san-miguel-a"
+            ).one().id
+            carrera_id = CarreraUPC.query.filter_by(
+                clave="ingenieria-de-software"
+            ).one().id
+
+        respuesta = self.client.post(
+            "/perfil/upc",
+            data={
+                "campus": "san_miguel",
+                "facultad": "ingenieria",
+                "carrera_upc_id": str(carrera_id),
+                "modalidad": "presencial",
+                "objetivo": "proyectos",
+                "estilo_estudio": "practico",
+                "viernes_cultural_disponible": "si",
+                "acepta_intercampus": "1",
+                "espacio_preferido_id": str(espacio_id),
+            },
+            follow_redirects=True,
+        )
+        self.assertIn("Contexto UPC actualizado", respuesta.get_data(as_text=True))
+
+        respuesta = self.client.post(
+            "/perfil/participaciones",
+            data={
+                "tipo": "grupo_upc",
+                "nombre": "Comunidad de Programacion Competitiva",
+                "rol": "coordinador",
+                "campus": "san_miguel",
+                "periodo": "2026-2",
+                "creditos_confirmados": "1",
+                "activa": "1",
+            },
+            follow_redirects=True,
+        )
+        self.assertIn("Actividad UPC agregada", respuesta.get_data(as_text=True))
+
+        contrato = self.client.get("/api/v1/perfil").get_json()["perfil"]
+        self.assertEqual(contrato["perfil_upc"]["campus"], "san_miguel")
+        self.assertEqual(
+            contrato["perfil_upc"]["carrera"]["nombre"],
+            "Ingeniería de Software",
+        )
+        self.assertEqual(
+            contrato["perfil_upc"]["espacio_preferido"]["aforo_maximo"], 6
+        )
+        self.assertEqual(contrato["creditos_extraacademicos"]["confirmados"], 1)
+        self.assertEqual(contrato["creditos_extraacademicos"]["pendientes"], 3)
+        self.assertEqual(contrato["participaciones_upc"][0]["tipo"], "grupo_upc")
+
+    def test_validaciones_upc_rechazan_periodos_y_prioridades_invalidas(self):
+        with self.app.app_context():
+            usuario = Usuario(
+                nombre="Ana",
+                correo_institucional="ana@upc.edu.pe",
+            )
+            usuario.set_password("segura1234")
+            curso = Curso(codigo="MA420", nombre="Matematica Basica")
+            with self.assertRaisesRegex(ValueError, "formato AAAA-1"):
+                ParticipacionUPC(
+                    usuario=usuario,
+                    tipo=TipoActividadUPC.TALLER,
+                    nombre="Teatro",
+                    rol=RolActividadUPC.PARTICIPANTE,
+                    periodo="2026-3",
+                )
+            with self.assertRaisesRegex(ValueError, "prioridad"):
+                MetaCursoUPC(
+                    usuario=usuario,
+                    curso=curso,
+                    rol=RolCursoUPC.REFORZAR,
+                    prioridad=6,
+                )
+
+    def test_matching_upc_activa_senales_contextuales_explicables(self):
+        with self.app.app_context():
+            espacio = EspacioUPC.query.filter_by(
+                clave="cubiculos-san-isidro-b"
+            ).one()
+            curso = Curso(codigo="MA420", nombre="Matematica Basica")
+            ana = Usuario(
+                nombre="Ana",
+                correo_institucional="ana@upc.edu.pe",
+                carrera="Ingenieria de Software",
+                intereses="programacion, musica",
+            )
+            bruno = Usuario(
+                nombre="Bruno",
+                correo_institucional="bruno@upc.edu.pe",
+                carrera="Ingenieria de Sistemas de Informacion",
+                intereses="programacion, deporte",
+            )
+            ana.set_password("segura1234")
+            bruno.set_password("segura1234")
+            for usuario in (ana, bruno):
+                usuario.cursos.append(curso)
+                usuario.horarios.append(
+                    Horario(
+                        dia="Viernes", hora_inicio="13:00", hora_fin="15:00"
+                    )
+                )
+                usuario.perfil_upc = PerfilUPC(
+                    campus=CampusUPC.SAN_ISIDRO,
+                    facultad=FacultadUPC.INGENIERIA,
+                    objetivo=ObjetivoSocialite.PROYECTOS,
+                    estilo_estudio=EstiloEstudio.PRACTICO,
+                    viernes_cultural_disponible=True,
+                    espacio_preferido=espacio,
+                )
+                usuario.participaciones_upc.append(
+                    ParticipacionUPC(
+                        tipo=TipoActividadUPC.GRUPO_UPC,
+                        nombre="Programacion Competitiva",
+                        rol=RolActividadUPC.PARTICIPANTE,
+                        campus=CampusUPC.SAN_ISIDRO,
+                        periodo="2026-2",
+                    )
+                )
+            ana.metas_curso.append(
+                MetaCursoUPC(
+                    curso=curso,
+                    rol=RolCursoUPC.ENSENAR,
+                    prioridad=5,
+                    busca_equipo=True,
+                )
+            )
+            bruno.metas_curso.append(
+                MetaCursoUPC(
+                    curso=curso,
+                    rol=RolCursoUPC.REFORZAR,
+                    prioridad=5,
+                    busca_equipo=True,
+                )
+            )
+            db.session.add_all([ana, bruno])
+            db.session.commit()
+
+            resultado = calcular_afinidad(ana, bruno)
+            self.assertGreaterEqual(resultado["porcentaje"], 80)
+            self.assertEqual(
+                set(resultado["componentes"]),
+                {
+                    "cursos",
+                    "horarios",
+                    "intereses",
+                    "campus",
+                    "contexto_academico",
+                    "estilo_objetivo",
+                    "vida_universitaria",
+                    "metas_curso",
+                },
+            )
+            tipos_razon = {razon["tipo"] for razon in resultado["razones"]}
+            self.assertIn("viernes_cultural", tipos_razon)
+            self.assertIn("metas_curso", tipos_razon)
+            self.assertEqual(
+                resultado["contexto_upc"]["campus"]["espacio"],
+                "Cubículos - Biblioteca Pabellón B",
+            )
 
 
 if __name__ == "__main__":
