@@ -50,7 +50,9 @@ agrega `contrato`, listo para el nuevo frontend:
     `peso_porcentual`.
   - Cuando ambos perfiles tienen datos suficientes se agregan, sin romper las
     claves anteriores: `campus`, `contexto_academico`, `estilo_objetivo`,
-    `vida_universitaria` y `metas_curso`.
+    `vida_universitaria`, `metas_curso` y `proximidad_grafo`.
+  - `contexto_upc.grafo`: `grado` (`1`, `2` o `null`), `tipo`, `via[]`,
+    `evaluable` e `intermediario_id` cuando el camino usa un estudiante puente.
   - `contexto_upc`: evidencia estructurada de las coincidencias UPC usadas.
   - `intereses_detalle`: Jaccard exacto, Jaccard por categorías, fórmula y una
     comparación porcentual para cada interés del usuario.
@@ -60,6 +62,8 @@ agrega `contrato`, listo para el nuevo frontend:
 
 Query params admitidos: `q`, `curso`, `afinidad`, `pagina`, `por_pagina`.
 El mismo contrato esta disponible como JSON en `GET /api/v1/companeros`.
+`GET /api/v1/companeros/top` devuelve exactamente los diez mejores mediante
+max-heap junto con `algoritmo.estructura`, `complejidad` y `grafo_max_grado`.
 
 ## `GET /perfil` → `perfil.html`
 
@@ -175,6 +179,23 @@ Acciones POST disponibles:
 - `/conexiones/<conexion_id>/rechazar`
 - `/conexiones/<conexion_id>/cancelar`
 
+## Mensajería privada
+
+`GET /mensajes` → `mensajes.html` entrega:
+
+- `conversaciones[]`: `contacto`, `ultimo_mensaje`, `no_leidos` y
+  `actualizada_en`.
+- `total_no_leidos`.
+
+`GET /mensajes/<usuario_id>` → `conversacion.html` exige una conexión aceptada
+y entrega `contacto`, hasta 50 `mensajes` y paginación por cursor
+`paginacion.antes_de`. Cada mensaje incluye `emisor_id`, `receptor_id`,
+`propio`, `leido`, `enviado_en` y `leido_en`.
+
+El POST a la misma ruta acepta `texto` de 1 a 2000 caracteres. Los contratos
+JSON equivalentes están disponibles en `GET /api/v1/mensajes` y
+`GET /api/v1/mensajes/<usuario_id>`.
+
 ## Seguridad y moderación
 
 `GET /personas/<id>/seguridad` → `seguridad_persona.html` entrega:
@@ -200,7 +221,7 @@ y `contrato.bloqueados[]` serializable para la futura fusión del frontend.
 - `400`: datos invalidos o token CSRF vencido.
 - `403`: el usuario no tiene permiso para la accion.
 - `404`: recurso inexistente.
-- `429`: bloqueo temporal tras cinco intentos de login fallidos.
+- `429`: límite temporal tras tres fallos de login por IP o exceso de reenvíos.
 - `413`: el cuerpo enviado supera el límite de carga.
 - Las respuestas autenticadas llevan `Cache-Control: private, no-store`.
 - Los avatares se sirven únicamente a usuarios autenticados desde

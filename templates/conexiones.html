@@ -40,6 +40,7 @@
       <article class="fila-conexion">
         {{ identidad(conexion.persona) }}
         <div class="acciones-contacto">
+          <a class="boton boton-pequeno" href="{{ url_for('conversacion', usuario_id=conexion.persona.id) }}">Abrir chat</a>
           {% if conexion.persona.correo_institucional %}<a href="mailto:{{ conexion.persona.correo_institucional }}">{{ conexion.persona.correo_institucional }}</a>{% endif %}
           <a class="enlace-seguridad" href="{{ url_for('seguridad_persona', usuario_id=conexion.persona.id) }}">Reportar o bloquear</a>
         </div>

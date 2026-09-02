@@ -1,9 +1,11 @@
 """Consultas optimizadas y reutilizables para las rutas de Socialite."""
 
-from sqlalchemy import exists, or_, select
+from datetime import UTC, datetime
+
+from sqlalchemy import case, exists, func, or_, select, update
 from sqlalchemy.orm import joinedload, selectinload
 
-from models import Bloqueo, Conexion, Curso, Grupo, PerfilUPC, Usuario, db
+from models import Bloqueo, Conexion, Curso, Grupo, Mensaje, PerfilUPC, Usuario, db
 
 
 def _opciones_matching_usuario():
@@ -51,6 +53,20 @@ def _opciones_conexion():
         .joinedload(Usuario.perfil_upc)
         .joinedload(PerfilUPC.espacio_preferido),
         joinedload(Conexion.destinatario).selectinload(Usuario.participaciones_upc),
+    )
+
+
+def _opciones_contacto_resumido():
+    campos = (
+        Usuario.id,
+        Usuario.nombre,
+        Usuario.foto_archivo,
+        Usuario.carrera,
+        Usuario.ciclo,
+    )
+    return (
+        joinedload(Conexion.remitente).load_only(*campos),
+        joinedload(Conexion.destinatario).load_only(*campos),
     )
 
 
@@ -225,3 +241,140 @@ def bloqueos_emitidos_de(usuario_id):
         .order_by(Bloqueo.creado_en.desc(), Bloqueo.id.desc())
     )
     return db.session.execute(sentencia).scalars().all()
+
+
+def contacto_aceptado(usuario_id, contacto_id):
+    sentencia = (
+        select(Conexion)
+        .where(
+            Conexion.estado == "aceptada",
+            ~exists().where(
+                or_(
+                    (Bloqueo.bloqueador_id == usuario_id)
+                    & (Bloqueo.bloqueado_id == contacto_id),
+                    (Bloqueo.bloqueador_id == contacto_id)
+                    & (Bloqueo.bloqueado_id == usuario_id),
+                )
+            ),
+            or_(
+                (Conexion.remitente_id == usuario_id)
+                & (Conexion.destinatario_id == contacto_id),
+                (Conexion.remitente_id == contacto_id)
+                & (Conexion.destinatario_id == usuario_id),
+            ),
+        )
+        .options(*_opciones_contacto_resumido())
+    )
+    return db.session.execute(sentencia).scalars().first()
+
+
+def contactos_aceptados_de(usuario_id):
+    sentencia = (
+        select(Conexion)
+        .where(
+            Conexion.estado == "aceptada",
+            ~exists().where(
+                or_(
+                    (Bloqueo.bloqueador_id == usuario_id)
+                    & (Bloqueo.bloqueado_id == case(
+                        (Conexion.remitente_id == usuario_id, Conexion.destinatario_id),
+                        else_=Conexion.remitente_id,
+                    )),
+                    (Bloqueo.bloqueado_id == usuario_id)
+                    & (Bloqueo.bloqueador_id == case(
+                        (Conexion.remitente_id == usuario_id, Conexion.destinatario_id),
+                        else_=Conexion.remitente_id,
+                    )),
+                )
+            ),
+            or_(
+                Conexion.remitente_id == usuario_id,
+                Conexion.destinatario_id == usuario_id,
+            ),
+        )
+        .options(*_opciones_contacto_resumido())
+        .order_by(Conexion.actualizada_en.desc(), Conexion.id.desc())
+    )
+    return db.session.execute(sentencia).scalars().all()
+
+
+def mensajes_entre(usuario_id, contacto_id, limite=50, antes_de_id=None):
+    sentencia = (
+        select(Mensaje)
+        .where(
+            or_(
+                (Mensaje.emisor_id == usuario_id)
+                & (Mensaje.receptor_id == contacto_id),
+                (Mensaje.emisor_id == contacto_id)
+                & (Mensaje.receptor_id == usuario_id),
+            )
+        )
+        .order_by(Mensaje.enviado_en.desc(), Mensaje.id.desc())
+        .limit(min(max(int(limite), 1), 100))
+    )
+    if antes_de_id:
+        sentencia = sentencia.where(Mensaje.id < int(antes_de_id))
+    mensajes = db.session.execute(sentencia).scalars().all()
+    mensajes.reverse()
+    return mensajes
+
+
+def ultimos_mensajes_por_contacto(usuario_id):
+    otro_id = case(
+        (Mensaje.emisor_id == usuario_id, Mensaje.receptor_id),
+        else_=Mensaje.emisor_id,
+    )
+    orden = func.row_number().over(
+        partition_by=otro_id,
+        order_by=(Mensaje.enviado_en.desc(), Mensaje.id.desc()),
+    )
+    clasificados = (
+        select(
+            Mensaje.id.label("mensaje_id"),
+            otro_id.label("contacto_id"),
+            orden.label("posicion"),
+        )
+        .where(
+            or_(
+                Mensaje.emisor_id == usuario_id,
+                Mensaje.receptor_id == usuario_id,
+            )
+        )
+        .subquery()
+    )
+    sentencia = (
+        select(Mensaje, clasificados.c.contacto_id)
+        .join(clasificados, clasificados.c.mensaje_id == Mensaje.id)
+        .where(clasificados.c.posicion == 1)
+    )
+    return {
+        int(contacto_id): mensaje
+        for mensaje, contacto_id in db.session.execute(sentencia).all()
+    }
+
+
+def mensajes_no_leidos_por_contacto(usuario_id):
+    sentencia = (
+        select(Mensaje.emisor_id, func.count(Mensaje.id))
+        .where(Mensaje.receptor_id == usuario_id, Mensaje.leido.is_(False))
+        .group_by(Mensaje.emisor_id)
+    )
+    return {
+        int(emisor_id): int(cantidad)
+        for emisor_id, cantidad in db.session.execute(sentencia).all()
+    }
+
+
+def marcar_mensajes_leidos(usuario_id, contacto_id):
+    sentencia = (
+        update(Mensaje)
+        .where(
+            Mensaje.emisor_id == contacto_id,
+            Mensaje.receptor_id == usuario_id,
+            Mensaje.leido.is_(False),
+        )
+        .values(leido=True, leido_en=datetime.now(UTC))
+        .execution_options(synchronize_session="fetch")
+    )
+    resultado = db.session.execute(sentencia)
+    return int(resultado.rowcount or 0)

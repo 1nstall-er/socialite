@@ -1,7 +1,6 @@
 import logging
 import os
 import secrets
-import time
 from datetime import timedelta
 from functools import wraps
 from hmac import compare_digest
@@ -25,13 +24,21 @@ from jinja2 import TemplateNotFound
 from sqlalchemy import inspect
 from sqlalchemy.exc import IntegrityError
 
-from auth import es_correo_institucional
+from auth import (
+    consultar_login,
+    crear_limitador_login,
+    es_correo_institucional,
+    limpiar_fallos_login,
+    registrar_login_fallido,
+)
 from mailer import enviar_codigo_verificacion
 from matching import (
+    GrafoAfinidadUPC,
     calcular_afinidad,
     calcular_afinidad_grupo,
     preparar_perfil,
     rankear_candidatos_paginado,
+    rankear_top_candidatos,
 )
 from media import eliminar_avatar, guardar_avatar
 from models import (
@@ -46,6 +53,7 @@ from models import (
     FacultadUPC,
     Grupo,
     Horario,
+    Mensaje,
     MetaCursoUPC,
     ModalidadUPC,
     MotivoReporte,
@@ -67,9 +75,11 @@ from models import (
 from presenters import (
     catalogo_upc_contexto,
     conexion_contexto,
+    conversacion_contexto,
     curso_contexto,
     grupo_contexto,
     match_contexto,
+    mensaje_contexto,
     paginacion_contexto,
     usuario_contexto,
 )
@@ -79,16 +89,24 @@ from queries import (
     conexion_entre,
     conexiones_con_candidatos,
     conexiones_de,
+    contacto_aceptado,
+    contactos_aceptados_de,
     grupos_de_usuario,
     grupos_filtrados,
     hay_bloqueo_entre,
+    marcar_mensajes_leidos,
+    mensajes_entre,
+    mensajes_no_leidos_por_contacto,
     obtener_grupo,
+    ultimos_mensajes_por_contacto,
     usuario_para_matching,
 )
 from verification import (
     MAX_INTENTOS,
     ResultadoVerificacion,
     completar_verificacion,
+    crear_limitador_reenvio,
+    limitar_reenvio,
     preparar_reto,
     segundos_para_reenviar,
     validar_codigo,
@@ -219,6 +237,11 @@ def create_app(test_config=None):
             "MAIL_DEFAULT_SENDER", "Socialite <no-reply@socialite.local>"
         ),
         MAIL_TIMEOUT=int(os.getenv("MAIL_TIMEOUT", "10")),
+        LOGIN_MAX_FALLOS=int(os.getenv("LOGIN_MAX_FALLOS", "3")),
+        LOGIN_VENTANA_SEGUNDOS=int(os.getenv("LOGIN_VENTANA_SEGUNDOS", "60")),
+        REENVIO_VENTANA_SEGUNDOS=int(
+            os.getenv("REENVIO_VENTANA_SEGUNDOS", "60")
+        ),
     )
     if test_config:
         app.config.update(test_config)
@@ -239,6 +262,14 @@ def create_app(test_config=None):
     )
     db.init_app(app)
     migrate.init_app(app, db)
+    limitador_login = crear_limitador_login(
+        app.config["LOGIN_MAX_FALLOS"], app.config["LOGIN_VENTANA_SEGUNDOS"]
+    )
+    limitador_reenvio = crear_limitador_reenvio(
+        app.config["REENVIO_VENTANA_SEGUNDOS"]
+    )
+    app.extensions["login_rate_limiter"] = limitador_login
+    app.extensions["verification_resend_rate_limiter"] = limitador_reenvio
     with app.app_context():
         if app.config["TESTING"] or app.config["AUTO_CREATE_SCHEMA"]:
             db.create_all()
@@ -360,12 +391,14 @@ def create_app(test_config=None):
         )
         usuario_actual = usuario_para_matching(g.usuario.id)
         candidatos = candidatos_para(usuario_actual.id, busqueda, curso_id)
+        grafo = GrafoAfinidadUPC([usuario_actual, *candidatos])
         paginacion = rankear_candidatos_paginado(
             usuario_actual,
             candidatos,
             afinidad_minima=afinidad,
             pagina=pagina,
             por_pagina=por_pagina,
+            grafo=grafo,
         )
         conexiones = conexiones_con_candidatos(
             usuario_actual.id,
@@ -390,6 +423,46 @@ def create_app(test_config=None):
             "conexiones": conexiones,
             "paginacion": contrato["paginacion"],
             "filtros": contrato["filtros"],
+        }
+
+    def contexto_top_companeros():
+        usuario_actual = usuario_para_matching(g.usuario.id)
+        candidatos = candidatos_para(usuario_actual.id)
+        grafo = GrafoAfinidadUPC([usuario_actual, *candidatos])
+        resultados = rankear_top_candidatos(
+            usuario_actual, candidatos, limite=10, grafo=grafo
+        )
+        return {
+            "resultados": [match_contexto(item) for item in resultados],
+            "algoritmo": {
+                "estructura": "max_heap",
+                "limite": 10,
+                "complejidad": "O(n + k log n)",
+                "grafo_max_grado": 2,
+            },
+        }
+
+    def contexto_bandeja_mensajes():
+        contactos = contactos_aceptados_de(g.usuario.id)
+        ultimos = ultimos_mensajes_por_contacto(g.usuario.id)
+        no_leidos = mensajes_no_leidos_por_contacto(g.usuario.id)
+        conversaciones = []
+        for conexion in contactos:
+            contacto = conexion.otra_persona(g.usuario)
+            conversaciones.append(
+                conversacion_contexto(
+                    conexion,
+                    g.usuario,
+                    ultimos.get(contacto.id),
+                    no_leidos.get(contacto.id, 0),
+                )
+            )
+        conversaciones.sort(
+            key=lambda conversacion: conversacion["actualizada_en"], reverse=True
+        )
+        return {
+            "conversaciones": conversaciones,
+            "total_no_leidos": sum(no_leidos.values()),
         }
 
     def contexto_grupos():
@@ -571,31 +644,46 @@ def create_app(test_config=None):
     def ingresar():
         if g.usuario:
             return redirect(url_for("index"))
-        bloqueo_hasta = session.get("bloqueo_login_hasta", 0)
-        if bloqueo_hasta > time.time():
-            flash("Demasiados intentos. Espera un minuto.", "error")
-            return render_template("ingresar.html"), 429
         if request.method == "POST":
+            decision = consultar_login(limitador_login, request.remote_addr)
+            if not decision.permitido:
+                flash(
+                    "Demasiados intentos fallidos desde esta red. Intenta nuevamente "
+                    f"en {decision.reintentar_en} segundos.",
+                    "error",
+                )
+                return (
+                    render_template("ingresar.html"),
+                    429,
+                    {"Retry-After": str(decision.reintentar_en)},
+                )
             correo = request.form.get("correo", "").strip().lower()
             password = request.form.get("password", "")
             usuario = Usuario.query.filter_by(correo_institucional=correo).first()
             if usuario is None or not usuario.check_password(password):
-                intentos = session.get("intentos_login", 0) + 1
-                session["intentos_login"] = intentos
-                if intentos >= 5:
-                    session["intentos_login"] = 0
-                    session["bloqueo_login_hasta"] = time.time() + 60
+                resultado_limite = registrar_login_fallido(
+                    limitador_login, request.remote_addr
+                )
                 flash("Correo o contrasena incorrectos.", "error")
+                if resultado_limite.restantes == 0:
+                    flash(
+                        "Alcanzaste el máximo de "
+                        f"{app.config['LOGIN_MAX_FALLOS']} intentos. La IP quedó "
+                        f"limitada por {app.config['LOGIN_VENTANA_SEGUNDOS']} segundos.",
+                        "error",
+                    )
             elif (
                 app.config["EMAIL_VERIFICATION_REQUIRED"]
                 and not usuario.correo_verificado
             ):
+                limpiar_fallos_login(limitador_login, request.remote_addr)
                 session.clear()
                 session.permanent = True
                 session["verificacion_usuario_id"] = usuario.id
                 flash("Confirma tu correo UPC antes de ingresar.", "info")
                 return redirect(url_for("verificar_correo"))
             else:
+                limpiar_fallos_login(limitador_login, request.remote_addr)
                 session.clear()
                 session.permanent = True
                 session["usuario_id"] = usuario.id
@@ -664,6 +752,36 @@ def create_app(test_config=None):
         usuario = db.session.get(Usuario, usuario_id) if usuario_id else None
         if usuario is None or usuario.correo_verificado:
             return redirect(url_for("ingresar"))
+        espera_persistente = segundos_para_reenviar(usuario)
+        if espera_persistente:
+            flash(
+                f"Espera {espera_persistente} segundos antes de pedir otro código.",
+                "info",
+            )
+            return redirect(url_for("verificar_correo"))
+        decision = limitar_reenvio(
+            limitador_reenvio, usuario.id, request.remote_addr
+        )
+        if not decision.permitido:
+            flash(
+                f"Demasiadas solicitudes. Reintenta en {decision.reintentar_en} segundos.",
+                "error",
+            )
+            return (
+                render_template(
+                    "verificar_correo.html",
+                    correo=usuario.correo_institucional,
+                    segundos_reenvio=decision.reintentar_en,
+                    intentos_restantes=max(
+                        MAX_INTENTOS - usuario.verificacion_intentos, 0
+                    ),
+                    correo_en_consola=(
+                        str(app.config["MAIL_BACKEND"]).lower() == "console"
+                    ),
+                ),
+                429,
+                {"Retry-After": str(decision.reintentar_en)},
+            )
         enviado, espera = emitir_codigo_verificacion(usuario)
         if enviado:
             flash("Enviamos un código nuevo. El anterior dejó de funcionar.", "success")
@@ -999,6 +1117,11 @@ def create_app(test_config=None):
     def api_companeros():
         return jsonify(contexto_companeros()["contrato"])
 
+    @app.get("/api/v1/companeros/top")
+    @login_required
+    def api_top_companeros():
+        return jsonify(contexto_top_companeros())
+
     @app.route("/personas/<int:usuario_id>")
     @login_required
     def persona(usuario_id):
@@ -1149,7 +1272,7 @@ def create_app(test_config=None):
     @app.route("/panel")
     @login_required
     def panel():
-        matches = contexto_companeros()["contrato"]["resultados"][:3]
+        matches = contexto_top_companeros()["resultados"][:3]
         grupos_usuario = grupos_de_usuario(g.usuario.id)
         grupos_recomendados = [
             grupo
@@ -1213,6 +1336,108 @@ def create_app(test_config=None):
             ],
         }
         return renderizar_contrato("conexiones.html", contrato, **contrato)
+
+    @app.get("/mensajes")
+    @login_required
+    def mensajes():
+        contrato = contexto_bandeja_mensajes()
+        return renderizar_contrato("mensajes.html", contrato, **contrato)
+
+    @app.get("/api/v1/mensajes")
+    @login_required
+    def api_mensajes():
+        return jsonify(contexto_bandeja_mensajes())
+
+    @app.route("/mensajes/<int:usuario_id>", methods=["GET", "POST"])
+    @login_required
+    def conversacion(usuario_id):
+        if usuario_id == g.usuario.id:
+            abort(400, description="No puedes enviarte mensajes.")
+        if hay_bloqueo_entre(g.usuario.id, usuario_id):
+            abort(404)
+        conexion = contacto_aceptado(g.usuario.id, usuario_id)
+        if conexion is None:
+            abort(403, description="El chat requiere una conexión aceptada.")
+        contacto = conexion.otra_persona(g.usuario)
+
+        if request.method == "POST":
+            try:
+                mensaje = Mensaje(
+                    emisor_id=g.usuario.id,
+                    receptor_id=contacto.id,
+                    texto=request.form.get("texto", ""),
+                )
+                db.session.add(mensaje)
+                db.session.commit()
+            except ValueError as error:
+                db.session.rollback()
+                flash(str(error), "error")
+            else:
+                flash("Mensaje enviado.", "success")
+            return redirect(url_for("conversacion", usuario_id=contacto.id)), 303
+
+        antes_de_id = request.args.get("antes_de", type=int)
+        historial = mensajes_entre(
+            g.usuario.id, contacto.id, limite=51, antes_de_id=antes_de_id
+        )
+        hay_anteriores = len(historial) > 50
+        if hay_anteriores:
+            historial = historial[-50:]
+        marcados = marcar_mensajes_leidos(g.usuario.id, contacto.id)
+        mensajes_serializados = [
+            mensaje_contexto(mensaje, g.usuario.id) for mensaje in historial
+        ]
+        if marcados:
+            db.session.commit()
+        contrato = {
+            "contacto": {
+                "id": contacto.id,
+                "nombre": contacto.nombre,
+                "iniciales": contacto.iniciales,
+                "foto_url": contacto.foto_url,
+                "carrera": contacto.carrera,
+                "ciclo": contacto.ciclo,
+            },
+            "mensajes": mensajes_serializados,
+            "paginacion": {
+                "hay_anteriores": hay_anteriores,
+                "antes_de": historial[0].id if historial and hay_anteriores else None,
+                "limite": 50,
+            },
+        }
+        return renderizar_contrato(
+            "conversacion.html",
+            contrato,
+            contacto=contrato["contacto"],
+            mensajes=contrato["mensajes"],
+            paginacion=contrato["paginacion"],
+        )
+
+    @app.get("/api/v1/mensajes/<int:usuario_id>")
+    @login_required
+    def api_conversacion(usuario_id):
+        if usuario_id == g.usuario.id or hay_bloqueo_entre(g.usuario.id, usuario_id):
+            abort(404)
+        conexion = contacto_aceptado(g.usuario.id, usuario_id)
+        if conexion is None:
+            abort(403)
+        historial = mensajes_entre(
+            g.usuario.id,
+            usuario_id,
+            limite=request.args.get("limite", default=50, type=int),
+            antes_de_id=request.args.get("antes_de", type=int),
+        )
+        marcar_mensajes_leidos(g.usuario.id, usuario_id)
+        mensajes_serializados = [
+            mensaje_contexto(mensaje, g.usuario.id) for mensaje in historial
+        ]
+        db.session.commit()
+        return jsonify(
+            {
+                "contacto_id": usuario_id,
+                "mensajes": mensajes_serializados,
+            }
+        )
 
     @app.get("/seguridad")
     @login_required

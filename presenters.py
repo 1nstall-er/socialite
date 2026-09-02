@@ -251,6 +251,53 @@ def conexion_contexto(conexion: Any, usuario_actual: Any) -> dict[str, Any]:
     }
 
 
+def usuario_resumen_contexto(usuario: Any) -> dict[str, Any]:
+    return {
+        "id": usuario.id,
+        "nombre": usuario.nombre,
+        "iniciales": usuario.iniciales,
+        "foto_url": usuario.foto_url,
+        "carrera": usuario.carrera,
+        "ciclo": usuario.ciclo,
+    }
+
+
+def mensaje_contexto(mensaje: Any, usuario_actual_id: int) -> dict[str, Any]:
+    return {
+        "id": mensaje.id,
+        "texto": mensaje.texto,
+        "emisor_id": mensaje.emisor_id,
+        "receptor_id": mensaje.receptor_id,
+        "propio": mensaje.emisor_id == usuario_actual_id,
+        "leido": mensaje.leido,
+        "enviado_en": mensaje.enviado_en.isoformat(),
+        "leido_en": mensaje.leido_en.isoformat() if mensaje.leido_en else None,
+    }
+
+
+def conversacion_contexto(
+    conexion: Any,
+    usuario_actual: Any,
+    ultimo_mensaje: Any | None,
+    no_leidos: int,
+) -> dict[str, Any]:
+    contacto = conexion.otra_persona(usuario_actual)
+    return {
+        "contacto": usuario_resumen_contexto(contacto),
+        "ultimo_mensaje": (
+            mensaje_contexto(ultimo_mensaje, usuario_actual.id)
+            if ultimo_mensaje is not None
+            else None
+        ),
+        "no_leidos": no_leidos,
+        "actualizada_en": (
+            ultimo_mensaje.enviado_en.isoformat()
+            if ultimo_mensaje is not None
+            else conexion.actualizada_en.isoformat()
+        ),
+    }
+
+
 def catalogo_upc_contexto(
     espacios: Iterable[EspacioUPC], carreras: Iterable[CarreraUPC]
 ) -> dict[str, Any]:

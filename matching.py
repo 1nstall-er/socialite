@@ -7,11 +7,11 @@ serializables para Jinja2 o JSON.
 
 from __future__ import annotations
 
-from collections import defaultdict
+from collections import defaultdict, deque
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from enum import Enum
-from heapq import nsmallest
+from heapq import heapify, heappop, nsmallest
 from math import isfinite
 from statistics import fmean
 from typing import Protocol, TypedDict, cast
@@ -25,6 +25,7 @@ PESO_CONTEXTO_ACADEMICO = 0.08
 PESO_ESTILO_OBJETIVO = 0.08
 PESO_VIDA_UNIVERSITARIA = 0.06
 PESO_METAS_CURSO = 0.10
+PESO_GRAFO = 0.08
 MINUTOS_HORARIO_COMPLETO = 120
 PESO_TOTAL_POSIBLE = sum(
     (
@@ -36,6 +37,7 @@ PESO_TOTAL_POSIBLE = sum(
         PESO_ESTILO_OBJETIVO,
         PESO_VIDA_UNIVERSITARIA,
         PESO_METAS_CURSO,
+        PESO_GRAFO,
     )
 )
 PROBABILIDAD_NEUTRAL = 0.50
@@ -109,12 +111,156 @@ class RankingPaginado(TypedDict):
     tiene_siguiente: bool
 
 
+class ContextoConexionGrafo(TypedDict):
+    grado: int | None
+    tipo: str
+    via: list[str]
+    intermediario_id: int | None
+    evaluable: bool
+
+
 @dataclass(frozen=True, slots=True)
 class ComponenteAfinidad:
     clave: str
     valor: float
     peso: float
     disponible: bool = True
+
+
+class GrafoAfinidadUPC:
+    """Grafo implícito por campus/facultad, sin materializar cliques O(n²).
+
+    Los índices invertidos conectan estudiantes que comparten campus o
+    facultad. Un BFS acotado expande cada bucket una sola vez y admite además
+    aristas sociales explícitas, como conexiones aceptadas.
+    """
+
+    def __init__(
+        self,
+        usuarios: Iterable[UsuarioCompatible],
+        conexiones_aceptadas: Iterable[tuple[int, int]] = (),
+    ) -> None:
+        self._usuarios: dict[int, UsuarioCompatible] = {}
+        self._campus: defaultdict[str, set[int]] = defaultdict(set)
+        self._facultades: defaultdict[str, set[int]] = defaultdict(set)
+        self._conexiones: defaultdict[int, set[int]] = defaultdict(set)
+        self._tiene_senales: dict[int, bool] = {}
+        for usuario in usuarios:
+            usuario_id = usuario.id
+            if usuario_id is None:
+                continue
+            self._usuarios[usuario_id] = usuario
+            contexto = _contexto_upc(usuario)
+            self._tiene_senales[usuario_id] = bool(
+                contexto["campus"] or contexto["facultad"]
+            )
+            if contexto["campus"]:
+                self._campus[contexto["campus"]].add(usuario_id)
+            if contexto["facultad"]:
+                self._facultades[contexto["facultad"]].add(usuario_id)
+        for origen, destino in conexiones_aceptadas:
+            if origen == destino or origen not in self._usuarios or destino not in self._usuarios:
+                continue
+            self._conexiones[origen].add(destino)
+            self._conexiones[destino].add(origen)
+            self._tiene_senales[origen] = True
+            self._tiene_senales[destino] = True
+
+    def contextos_desde(
+        self, origen_id: int, max_grado: int = 2
+    ) -> dict[int, ContextoConexionGrafo]:
+        """Devuelve distancias mínimas con BFS en O(V + E + buckets)."""
+        if origen_id not in self._usuarios or max_grado < 1:
+            return {}
+        distancias = {origen_id: 0}
+        vias: dict[int, list[str]] = {origen_id: []}
+        intermediarios: dict[int, int | None] = {origen_id: None}
+        cola = deque([origen_id])
+        buckets_expandidos: set[tuple[str, str]] = set()
+
+        def descubrir(
+            actual_id: int, vecino_id: int, razones: list[str]
+        ) -> None:
+            nueva_distancia = distancias[actual_id] + 1
+            if vecino_id == actual_id or vecino_id in distancias:
+                return
+            distancias[vecino_id] = nueva_distancia
+            vias[vecino_id] = list(dict.fromkeys([*vias[actual_id], *razones]))
+            intermediarios[vecino_id] = actual_id if nueva_distancia == 2 else None
+            cola.append(vecino_id)
+
+        while cola:
+            actual_id = cola.popleft()
+            if distancias[actual_id] >= max_grado:
+                continue
+            for vecino_id in self._conexiones.get(actual_id, ()):
+                descubrir(actual_id, vecino_id, ["conexion_aceptada"])
+
+            contexto = _contexto_upc(self._usuarios[actual_id])
+            for dimension, clave, indice in (
+                ("campus", contexto["campus"], self._campus),
+                ("facultad", contexto["facultad"], self._facultades),
+            ):
+                if not clave or (dimension, clave) in buckets_expandidos:
+                    continue
+                buckets_expandidos.add((dimension, clave))
+                for vecino_id in indice[clave]:
+                    descubrir(actual_id, vecino_id, [f"{dimension}:{clave}"])
+
+        resultado: dict[int, ContextoConexionGrafo] = {}
+        for usuario_id in self._usuarios:
+            if usuario_id == origen_id:
+                continue
+            grado = distancias.get(usuario_id)
+            resultado[usuario_id] = {
+                "grado": grado,
+                "tipo": (
+                    "primer_grado"
+                    if grado == 1
+                    else "segundo_grado"
+                    if grado == 2
+                    else "fuera_de_red"
+                ),
+                "via": vias.get(usuario_id, []),
+                "intermediario_id": intermediarios.get(usuario_id),
+                "evaluable": bool(
+                    self._tiene_senales.get(origen_id)
+                    and self._tiene_senales.get(usuario_id)
+                ),
+            }
+        return resultado
+
+
+class MaxHeapAfinidad:
+    """Cola de prioridad que extrae primero la mayor afinidad."""
+
+    def __init__(self, resultados: Iterable[dict[str, object]]) -> None:
+        self._items = [self._entrada(resultado, indice) for indice, resultado in enumerate(resultados)]
+        heapify(self._items)
+
+    @staticmethod
+    def _entrada(
+        resultado: dict[str, object], indice: int
+    ) -> tuple[float, str, int, int, dict[str, object]]:
+        usuario = resultado["usuario"]
+        return (
+            -cast(float, resultado["score"]),
+            normalizar_texto(getattr(usuario, "nombre", "")),
+            int(getattr(usuario, "id", 0) or 0),
+            indice,
+            resultado,
+        )
+
+    def extraer_maximo(self) -> dict[str, object]:
+        if not self._items:
+            raise IndexError("El max-heap está vacío")
+        return heappop(self._items)[-1]
+
+    def __bool__(self) -> bool:
+        return bool(self._items)
+
+    def __len__(self) -> int:
+        return len(self._items)
 
 
 def normalizar_texto(valor: object | None) -> str:
@@ -604,6 +750,7 @@ def calcular_afinidad(
     candidato: UsuarioCompatible,
     perfil_usuario: PerfilPreparado | None = None,
     perfil_candidato: PerfilPreparado | None = None,
+    contexto_grafo: ContextoConexionGrafo | None = None,
 ) -> dict[str, object]:
     """Calcula afinidad base y activa contexto UPC solo cuando esta disponible."""
     perfil_usuario = perfil_usuario or preparar_perfil(usuario)
@@ -757,11 +904,36 @@ def calcular_afinidad(
             }
         )
 
+    grafo_disponible = bool(contexto_grafo and contexto_grafo["evaluable"])
+    if contexto_grafo is not None:
+        contexto_resultado["grafo"] = contexto_grafo
+    if contexto_grafo is not None and grafo_disponible:
+        grado = contexto_grafo["grado"]
+        valor_grafo = 1.0 if grado == 1 else 0.65 if grado == 2 else 0.0
+        componentes.append(
+            ComponenteAfinidad("proximidad_grafo", valor_grafo, PESO_GRAFO)
+        )
+        if grado in {1, 2}:
+            razones.append(
+                {
+                    "tipo": "proximidad_grafo",
+                    "titulo": (
+                        "Conexión de primer grado"
+                        if grado == 1
+                        else "Conexión de segundo grado"
+                    ),
+                    "detalle": " · ".join(contexto_grafo["via"]),
+                }
+            )
+
     total, componentes_serializados = _serializar_componentes(componentes)
     peso_disponible = sum(
         componente.peso for componente in componentes if componente.disponible
     )
-    cobertura = _limitar(peso_disponible / PESO_TOTAL_POSIBLE)
+    peso_total_aplicable = PESO_TOTAL_POSIBLE - (
+        PESO_GRAFO if not grafo_disponible else 0
+    )
+    cobertura = _limitar(peso_disponible / peso_total_aplicable)
     probabilidad = estimar_probabilidad_emparejamiento(total, cobertura)
     return {
         "score": total,
@@ -837,6 +1009,7 @@ def rankear_candidatos_paginado(
     afinidad_minima: float = 0,
     pagina: int = 1,
     por_pagina: int = 18,
+    grafo: GrafoAfinidadUPC | None = None,
 ) -> RankingPaginado:
     """Calcula únicamente el prefijo ordenado necesario para la página.
 
@@ -849,6 +1022,11 @@ def rankear_candidatos_paginado(
     limite = max(int(por_pagina), 1)
     hasta = pagina_solicitada * limite
     perfil_usuario = preparar_perfil(usuario)
+    contextos_grafo = (
+        grafo.contextos_desde(usuario.id)
+        if grafo is not None and usuario.id is not None
+        else {}
+    )
     total = 0
 
     def resultados_validos() -> Iterable[dict[str, object]]:
@@ -859,6 +1037,9 @@ def rankear_candidatos_paginado(
                 candidato,
                 perfil_usuario=perfil_usuario,
                 perfil_candidato=preparar_perfil(candidato),
+                contexto_grafo=contextos_grafo.get(candidato.id)
+                if candidato.id is not None
+                else None,
             )
             if cast(float, resultado["score"]) < minimo:
                 continue
@@ -878,3 +1059,46 @@ def rankear_candidatos_paginado(
         "tiene_anterior": pagina_real > 1,
         "tiene_siguiente": pagina_real < paginas,
     }
+
+
+def rankear_top_candidatos(
+    usuario: UsuarioCompatible,
+    candidatos: Iterable[UsuarioCompatible],
+    limite: int = 10,
+    afinidad_minima: float = 0,
+    grafo: GrafoAfinidadUPC | None = None,
+) -> list[dict[str, object]]:
+    """Obtiene el Top-K exacto mediante max-heap en O(n + k log n).
+
+    Todo ranking exacto debe evaluar al menos una vez los ``n`` candidatos. El
+    heap evita ordenar los ``n`` resultados y solo extrae los ``k`` solicitados.
+    """
+    candidatos_lista = list(candidatos)
+    limite_real = min(max(int(limite), 0), 100)
+    if limite_real == 0:
+        return []
+    grafo = grafo or GrafoAfinidadUPC([usuario, *candidatos_lista])
+    contextos_grafo = (
+        grafo.contextos_desde(usuario.id) if usuario.id is not None else {}
+    )
+    perfil_usuario = preparar_perfil(usuario)
+    minimo = _limitar(float(afinidad_minima) / 100)
+
+    def resultados() -> Iterable[dict[str, object]]:
+        for candidato in candidatos_lista:
+            resultado = calcular_afinidad(
+                usuario,
+                candidato,
+                perfil_usuario=perfil_usuario,
+                perfil_candidato=preparar_perfil(candidato),
+                contexto_grafo=(
+                    contextos_grafo.get(candidato.id)
+                    if candidato.id is not None
+                    else None
+                ),
+            )
+            if cast(float, resultado["score"]) >= minimo:
+                yield {"usuario": candidato, **resultado}
+
+    heap = MaxHeapAfinidad(resultados())
+    return [heap.extraer_maximo() for _ in range(min(limite_real, len(heap)))]

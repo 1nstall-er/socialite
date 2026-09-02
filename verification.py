@@ -9,10 +9,13 @@ from datetime import UTC, datetime, timedelta
 from enum import StrEnum
 from typing import Final, Protocol
 
+from rate_limit import DecisionLimite, LimitadorVentanaDeslizante
+
 CODIGO_DIGITOS: Final[int] = 6
 VIGENCIA_MINUTOS: Final[int] = 15
 REENVIO_SEGUNDOS: Final[int] = 60
 MAX_INTENTOS: Final[int] = 5
+MAX_REENVIOS_POR_VENTANA: Final[int] = 1
 
 
 class UsuarioVerificable(Protocol):
@@ -30,6 +33,21 @@ class ResultadoVerificacion(StrEnum):
     INVALIDO = "invalido"
     EXPIRADO = "expirado"
     AGOTADO = "agotado"
+
+
+def crear_limitador_reenvio(
+    ventana_segundos: int = REENVIO_SEGUNDOS,
+) -> LimitadorVentanaDeslizante:
+    return LimitadorVentanaDeslizante(MAX_REENVIOS_POR_VENTANA, ventana_segundos)
+
+
+def limitar_reenvio(
+    limitador: LimitadorVentanaDeslizante,
+    usuario_id: int,
+    direccion_ip: str | None,
+) -> DecisionLimite:
+    clave = f"{usuario_id}:{(direccion_ip or 'desconocido').strip().lower()}"
+    return limitador.consultar(clave, consumir=True)
 
 
 def ahora_utc() -> datetime:

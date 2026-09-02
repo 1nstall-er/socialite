@@ -1,0 +1,39 @@
+{% extends "base.html" %}
+
+{% block title %}Mensajes — Socialite{% endblock %}
+
+{% block content %}
+<div class="cabecera-pagina">
+  <div>
+    <span class="eyebrow">Conversaciones privadas</span>
+    <h1>Coordina con tus conexiones.</h1>
+    <p>Solo puedes escribir a personas que aceptaron conectar contigo.</p>
+  </div>
+  {% if total_no_leidos %}<span class="contador contador-destacado">{{ total_no_leidos }} sin leer</span>{% endif %}
+</div>
+
+<section class="tarjeta bandeja-mensajes">
+  {% for conversacion in conversaciones %}
+    <a class="fila-conversacion" href="{{ url_for('conversacion', usuario_id=conversacion.contacto.id) }}">
+      <div class="avatar{% if conversacion.contacto.foto_url %} avatar-con-foto{% endif %}">
+        {% if conversacion.contacto.foto_url %}<img src="{{ conversacion.contacto.foto_url }}" alt="Foto de {{ conversacion.contacto.nombre }}" loading="lazy">{% else %}{{ conversacion.contacto.iniciales }}{% endif %}
+      </div>
+      <div class="conversacion-resumen">
+        <div><strong>{{ conversacion.contacto.nombre }}</strong>{% if conversacion.no_leidos %}<span class="contador">{{ conversacion.no_leidos }}</span>{% endif %}</div>
+        {% if conversacion.ultimo_mensaje %}
+          <p>{% if conversacion.ultimo_mensaje.propio %}Tú: {% endif %}{{ conversacion.ultimo_mensaje.texto }}</p>
+        {% else %}
+          <p>Aún no conversaron. Rompe el hielo.</p>
+        {% endif %}
+      </div>
+    </a>
+  {% else %}
+    <div class="estado-vacio">
+      <span>✦</span>
+      <h2>Tu bandeja está lista</h2>
+      <p>Acepta una conexión para iniciar una conversación privada.</p>
+      <a class="boton boton-secundario" href="{{ url_for('companeros') }}">Buscar compañeros</a>
+    </div>
+  {% endfor %}
+</section>
+{% endblock %}

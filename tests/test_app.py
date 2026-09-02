@@ -24,6 +24,7 @@ from models import (
     FacultadUPC,
     Grupo,
     Horario,
+    Mensaje,
     MetaCursoUPC,
     ObjetivoSocialite,
     ParticipacionUPC,
@@ -256,6 +257,30 @@ class SocialiteTestCase(unittest.TestCase):
         with self.client.session_transaction() as sesion:
             self.assertIn("usuario_id", sesion)
 
+    def test_login_limita_tres_fallos_por_ip(self):
+        self.registrar()
+        self.client.post("/salir")
+        for _ in range(3):
+            respuesta = self.client.post(
+                "/ingresar",
+                data={"correo": "ana@upc.edu.pe", "password": "incorrecta1"},
+            )
+            self.assertEqual(respuesta.status_code, 200)
+
+        bloqueada = self.client.post(
+            "/ingresar",
+            data={"correo": "ana@upc.edu.pe", "password": "segura1234"},
+        )
+        self.assertEqual(bloqueada.status_code, 429)
+        self.assertIn("Retry-After", bloqueada.headers)
+
+        permitida = self.client.post(
+            "/ingresar",
+            data={"correo": "ana@upc.edu.pe", "password": "segura1234"},
+            environ_overrides={"REMOTE_ADDR": "192.0.2.2"},
+        )
+        self.assertEqual(permitida.status_code, 302)
+
     def test_perfil_agrega_curso_y_horario(self):
         self.registrar()
         self.client.post(
@@ -461,6 +486,11 @@ class SocialiteTestCase(unittest.TestCase):
         self.assertIn("modelo_probabilidad", datos["resultados"][0])
         self.assertNotIn("correo_institucional", datos["resultados"][0]["usuario"])
 
+        top = self.client.get("/api/v1/companeros/top").get_json()
+        self.assertEqual(top["algoritmo"]["estructura"], "max_heap")
+        self.assertEqual(top["algoritmo"]["grafo_max_grado"], 2)
+        self.assertLessEqual(len(top["resultados"]), 10)
+
     def test_flujo_de_conexion_revela_email_solo_al_aceptar(self):
         self.registrar()
         with self.app.app_context():
@@ -491,6 +521,50 @@ class SocialiteTestCase(unittest.TestCase):
         self.assertEqual(conexiones.status_code, 200)
         self.assertIn("Mis contactos", conexiones.get_data(as_text=True))
         self.assertIn("bruno@upc.edu.pe", conexiones.get_data(as_text=True))
+
+    def test_chat_solo_entre_conexiones_y_marca_mensajes_como_leidos(self):
+        self.registrar()
+        with self.app.app_context():
+            ana_id = Usuario.query.one().id
+        self.client.post("/salir")
+        self.registrar(nombre="Bruno", correo="bruno@upc.edu.pe")
+        with self.app.app_context():
+            bruno_id = Usuario.query.filter_by(
+                correo_institucional="bruno@upc.edu.pe"
+            ).one().id
+        self.client.post(f"/companeros/{ana_id}/conectar")
+        with self.app.app_context():
+            conexion_id = Conexion.query.one().id
+
+        self.client.post("/salir")
+        self.client.post(
+            "/ingresar",
+            data={"correo": "ana@upc.edu.pe", "password": "segura1234"},
+        )
+        self.client.post(f"/conexiones/{conexion_id}/aceptar")
+        respuesta = self.client.post(
+            f"/mensajes/{bruno_id}", data={"texto": "¿Estudiamos mañana?"}
+        )
+        self.assertEqual(respuesta.status_code, 303)
+        with self.app.app_context():
+            mensaje = Mensaje.query.one()
+            self.assertEqual(mensaje.emisor_id, ana_id)
+            self.assertEqual(mensaje.receptor_id, bruno_id)
+            self.assertFalse(mensaje.leido)
+
+        self.client.post("/salir")
+        self.client.post(
+            "/ingresar",
+            data={"correo": "bruno@upc.edu.pe", "password": "segura1234"},
+        )
+        bandeja = self.client.get("/mensajes").get_data(as_text=True)
+        self.assertIn("¿Estudiamos mañana?", bandeja)
+        chat = self.client.get(f"/mensajes/{ana_id}")
+        self.assertIn("¿Estudiamos mañana?", chat.get_data(as_text=True))
+        with self.app.app_context():
+            mensaje = Mensaje.query.one()
+            self.assertTrue(mensaje.leido)
+            self.assertIsNotNone(mensaje.leido_en)
 
     def test_bloqueo_corta_conexion_y_excluye_el_matching(self):
         self.registrar()

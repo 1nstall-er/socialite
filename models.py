@@ -602,6 +602,18 @@ class Usuario(db.Model):
         foreign_keys="Reporte.reportado_id",
         back_populates="reportado",
     )
+    mensajes_enviados = db.relationship(
+        "Mensaje",
+        foreign_keys="Mensaje.emisor_id",
+        back_populates="emisor",
+        cascade="all, delete-orphan",
+    )
+    mensajes_recibidos = db.relationship(
+        "Mensaje",
+        foreign_keys="Mensaje.receptor_id",
+        back_populates="receptor",
+        cascade="all, delete-orphan",
+    )
     perfil_upc = db.relationship(
         "PerfilUPC", back_populates="usuario", uselist=False,
         cascade="all, delete-orphan", single_parent=True,
@@ -987,6 +999,61 @@ class Bloqueo(db.Model):
     bloqueado = db.relationship(
         "Usuario", foreign_keys=[bloqueado_id], back_populates="bloqueos_recibidos"
     )
+
+
+class Mensaje(db.Model):
+    """Mensaje privado e inmutable entre dos conexiones aceptadas."""
+
+    __tablename__ = "mensajes"
+    __table_args__ = (
+        db.CheckConstraint("emisor_id != receptor_id", name="ck_mensaje_usuarios_distintos"),
+        db.CheckConstraint(
+            "length(texto) BETWEEN 1 AND 2000", name="ck_mensaje_texto_longitud"
+        ),
+        db.Index(
+            "ix_mensajes_emisor_receptor_fecha",
+            "emisor_id",
+            "receptor_id",
+            "enviado_en",
+        ),
+        db.Index(
+            "ix_mensajes_receptor_leido_fecha",
+            "receptor_id",
+            "leido",
+            "enviado_en",
+        ),
+    )
+
+    id = db.Column(db.Integer, primary_key=True)
+    emisor_id = db.Column(
+        db.Integer, db.ForeignKey("usuarios.id"), nullable=False, index=True
+    )
+    receptor_id = db.Column(
+        db.Integer, db.ForeignKey("usuarios.id"), nullable=False, index=True
+    )
+    texto = db.Column(db.Text, nullable=False)
+    enviado_en = db.Column(
+        db.DateTime(timezone=True), nullable=False, default=lambda: datetime.now(UTC), index=True
+    )
+    leido = db.Column(db.Boolean, nullable=False, default=False, server_default="0")
+    leido_en = db.Column(db.DateTime(timezone=True))
+
+    emisor = db.relationship(
+        "Usuario", foreign_keys=[emisor_id], back_populates="mensajes_enviados"
+    )
+    receptor = db.relationship(
+        "Usuario", foreign_keys=[receptor_id], back_populates="mensajes_recibidos"
+    )
+
+    @validates("texto")
+    def validar_texto(self, _clave: str, valor: str) -> str:
+        limpio = (valor or "").strip()
+        if not 1 <= len(limpio) <= 2000:
+            raise ValueError("El mensaje debe tener entre 1 y 2000 caracteres")
+        return limpio
+
+    def involucra(self, usuario_id: int) -> bool:
+        return usuario_id in (self.emisor_id, self.receptor_id)
 
 
 class Reporte(db.Model):
