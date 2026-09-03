@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+
+{% block title %}Notificaciones — Socialite{% endblock %}
+
+{% block content %}
+<div class="cabecera-pagina">
+  <div>
+    <span class="eyebrow">Actividad en tiempo real</span>
+    <h1>Tus notificaciones.</h1>
+    <p>Las alertas permanecen aquí aunque hayas estado desconectado.</p>
+  </div>
+  {% if total_no_leidas %}
+  <form method="post" action="{{ url_for('leer_todas_notificaciones') }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <button class="boton boton-secundario" type="submit">Marcar todas como leídas</button>
+  </form>
+  {% endif %}
+</div>
+
+<section class="tarjeta lista-notificaciones" aria-live="polite">
+  {% for notificacion in notificaciones %}
+  <article class="fila-notificacion{% if not notificacion.leida %} notificacion-nueva{% endif %}">
+    <span class="indicador-notificacion" aria-hidden="true"></span>
+    <div>
+      <strong>{{ notificacion.titulo }}</strong>
+      {% if notificacion.contenido %}<p>{{ notificacion.contenido }}</p>{% endif %}
+      <small>{{ notificacion.creada_en[:16].replace('T', ' ') }}</small>
+    </div>
+    <form method="post" action="{{ url_for('leer_notificacion', notificacion_id=notificacion.id) }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <button class="enlace-boton" type="submit">{% if notificacion.leida %}Abrir{% else %}Ver{% endif %}</button>
+    </form>
+  </article>
+  {% else %}
+  <div class="estado-vacio">
+    <span>✓</span>
+    <h2>Todo al día</h2>
+    <p>Aquí aparecerán tus mensajes y novedades de Socialite.</p>
+  </div>
+  {% endfor %}
+</section>
+{% endblock %}

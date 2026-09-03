@@ -4,6 +4,10 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="description" content="Socialite conecta estudiantes UPC para estudiar y conocer gente en el campus.">
+{% if g.usuario %}
+<meta name="csrf-token" content="{{ csrf_token() }}">
+<meta name="current-user-id" content="{{ g.usuario.id }}">
+{% endif %}
 <title>{% block title %}Socialite{% endblock %}</title>
 <link rel="icon" href="{{ url_for('static', filename='favicon.svg') }}" type="image/svg+xml">
 <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
@@ -24,6 +28,10 @@
 <a href="{{ url_for('companeros') }}">Compañeros</a>
 <a href="{{ url_for('conexiones') }}">Conexiones</a>
 <a href="{{ url_for('mensajes') }}">Mensajes</a>
+<a class="enlace-notificaciones" href="{{ url_for('notificaciones') }}">
+Notificaciones
+<span class="contador{% if not notificaciones_no_leidas %} oculto{% endif %}" data-notification-count>{{ notificaciones_no_leidas }}</span>
+</a>
 <a href="{{ url_for('perfil') }}">Mi perfil</a>
 <a href="{{ url_for('seguridad') }}">Seguridad</a>
 <form class="form-inline" method="post" action="{{ url_for('salir') }}">
@@ -56,6 +64,10 @@
 </footer>
 
 <script src="{{ url_for('static', filename='app.js') }}" defer></script>
+{% if g.usuario %}
+<script src="https://cdn.socket.io/4.8.1/socket.io.min.js" integrity="sha384-mkQ3/7FUtcGyoppY6bz/PORYoGqOl7/aSUMn2ymDOJcapfS6PHqxhRTMh1RR0Q6+" crossorigin="anonymous" defer></script>
+<script src="{{ url_for('static', filename='realtime.js') }}" defer></script>
+{% endif %}
 {% block scripts %}{% endblock %}
 </body>
 </html>

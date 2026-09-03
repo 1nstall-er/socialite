@@ -34,6 +34,10 @@ companeros y creen grupos dentro del campus. El MVP esta enfocado en la UPC.
   con motivos controlados y estado de revisión.
 - Chat privado uno a uno entre conexiones aceptadas, historial por cursor,
   mensajes no leídos e índices de conversación.
+- Chat bidireccional con Flask-SocketIO, salas autorizadas, reconexión y
+  fallback HTTP cuando el canal en tiempo real no está disponible.
+- Notificaciones in-app persistentes con contador y alertas instantáneas en
+  todas las pestañas conectadas del destinatario.
 - Rate limiting thread-safe: tres fallos de login por IP y un reenvío de correo
   por minuto, además del cooldown persistido en base de datos.
 - Migraciones versionadas con Alembic/Flask-Migrate para evolucionar la base sin
@@ -43,6 +47,7 @@ companeros y creen grupos dentro del campus. El MVP esta enfocado en la UPC.
 
 - Flask 3
 - Flask-SQLAlchemy
+- Flask-SocketIO
 - Pillow para procesar imágenes sin confiar en la extensión del archivo
 - SQLite en desarrollo
 - HTML y CSS sin dependencias de frontend
@@ -56,6 +61,8 @@ companeros y creen grupos dentro del campus. El MVP esta enfocado en la UPC.
   cartesianos entre colecciones.
 - `presenters.py`: contratos serializables para Jinja2 y JSON.
 - `models.py`: entidades y relaciones persistentes.
+- `messaging.py`: transacción y autorización compartida por HTTP y WebSocket.
+- `sockets.py`: eventos, salas autenticadas y rate limiting del canal realtime.
 - `media.py`: validación, normalización y almacenamiento privado de avatares.
 - `verification.py`: reto criptográfico, expiración, intentos y reenvío.
 - `rate_limit.py`: ventana deslizante acotada y sustituible por Redis.
@@ -63,8 +70,7 @@ companeros y creen grupos dentro del campus. El MVP esta enfocado en la UPC.
 - `migrations/`: historial reproducible de cambios de esquema.
 
 Los contratos que debe consumir el frontend estan documentados en
-`docs/JINJA_CONTEXT.md`. Las rutas nuevas sin template responden JSON hasta que
-se agregue la plantilla correspondiente, sin cambiar el contrato.
+`docs/JINJA_CONTEXT.md` y `docs/REALTIME.md`.
 
 Los hechos institucionales, fuentes y decisiones de modelado se documentan en
 `docs/UPC_DOMAIN.md`.
@@ -132,6 +138,6 @@ resultado visible. El endpoint Top‑10 usa un max-heap: construye la cola en
 ## Alcance pendiente
 
 El envío SMTP ya está listo, pero necesita las credenciales del proveedor de
-correo del despliegue. El MVP todavía no incluye chat en tiempo real ni una app
-nativa. La mensajería actual funciona con solicitudes HTTP y queda preparada
-para incorporar WebSockets cuando se despliegue con infraestructura asíncrona.
+correo del despliegue. Para escalar Socket.IO a varios procesos se deberá
+sustituir el rate limiter en memoria y configurar una cola compartida como
+Redis; la interfaz actual mantiene ese cambio aislado de la lógica de dominio.

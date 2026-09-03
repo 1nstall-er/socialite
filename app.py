@@ -41,6 +41,7 @@ from matching import (
     rankear_top_candidatos,
 )
 from media import eliminar_avatar, guardar_avatar
+from messaging import ErrorMensajeria, crear_mensaje
 from models import (
     Bloqueo,
     CampusUPC,
@@ -53,10 +54,10 @@ from models import (
     FacultadUPC,
     Grupo,
     Horario,
-    Mensaje,
     MetaCursoUPC,
     ModalidadUPC,
     MotivoReporte,
+    Notificacion,
     ObjetivoSocialite,
     ParticipacionUPC,
     PerfilUPC,
@@ -80,6 +81,7 @@ from presenters import (
     grupo_contexto,
     match_contexto,
     mensaje_contexto,
+    notificacion_contexto,
     paginacion_contexto,
     usuario_contexto,
 )
@@ -94,13 +96,17 @@ from queries import (
     grupos_de_usuario,
     grupos_filtrados,
     hay_bloqueo_entre,
-    marcar_mensajes_leidos,
+    marcar_conversacion_leida,
+    marcar_notificaciones_leidas,
     mensajes_entre,
     mensajes_no_leidos_por_contacto,
+    notificaciones_de,
+    notificaciones_no_leidas_total,
     obtener_grupo,
     ultimos_mensajes_por_contacto,
     usuario_para_matching,
 )
+from sockets import inicializar_socketio, socketio
 from verification import (
     MAX_INTENTOS,
     ResultadoVerificacion,
@@ -242,6 +248,11 @@ def create_app(test_config=None):
         REENVIO_VENTANA_SEGUNDOS=int(
             os.getenv("REENVIO_VENTANA_SEGUNDOS", "60")
         ),
+        SOCKETIO_ASYNC_MODE=os.getenv("SOCKETIO_ASYNC_MODE", "threading"),
+        SOCKET_MESSAGE_MAX=int(os.getenv("SOCKET_MESSAGE_MAX", "20")),
+        SOCKET_MESSAGE_WINDOW_SECONDS=int(
+            os.getenv("SOCKET_MESSAGE_WINDOW_SECONDS", "60")
+        ),
     )
     if test_config:
         app.config.update(test_config)
@@ -262,6 +273,7 @@ def create_app(test_config=None):
     )
     db.init_app(app)
     migrate.init_app(app, db)
+    inicializar_socketio(app)
     limitador_login = crear_limitador_login(
         app.config["LOGIN_MAX_FALLOS"], app.config["LOGIN_VENTANA_SEGUNDOS"]
     )
@@ -319,6 +331,13 @@ def create_app(test_config=None):
 
     app.jinja_env.globals["csrf_token"] = csrf_token
 
+    @app.context_processor
+    def contexto_notificaciones_global():
+        total = (
+            notificaciones_no_leidas_total(g.usuario.id) if g.get("usuario") else 0
+        )
+        return {"notificaciones_no_leidas": total}
+
     @app.before_request
     def proteger_formularios():
         if request.method == "POST" and app.config["CSRF_ENABLED"]:
@@ -335,7 +354,9 @@ def create_app(test_config=None):
         respuesta.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()"
         respuesta.headers["Content-Security-Policy"] = (
             "default-src 'self'; img-src 'self' data:; style-src 'self'; "
-            "script-src 'self'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'"
+            "script-src 'self' https://cdn.socket.io; "
+            "connect-src 'self' ws: wss:; base-uri 'self'; "
+            "form-action 'self'; frame-ancestors 'none'"
         )
         if g.get("usuario") and request.endpoint != "avatar":
             respuesta.headers["Cache-Control"] = "private, no-store"
@@ -1362,15 +1383,8 @@ def create_app(test_config=None):
 
         if request.method == "POST":
             try:
-                mensaje = Mensaje(
-                    emisor_id=g.usuario.id,
-                    receptor_id=contacto.id,
-                    texto=request.form.get("texto", ""),
-                )
-                db.session.add(mensaje)
-                db.session.commit()
-            except ValueError as error:
-                db.session.rollback()
+                crear_mensaje(g.usuario, contacto.id, request.form.get("texto"))
+            except ErrorMensajeria as error:
                 flash(str(error), "error")
             else:
                 flash("Mensaje enviado.", "success")
@@ -1383,11 +1397,13 @@ def create_app(test_config=None):
         hay_anteriores = len(historial) > 50
         if hay_anteriores:
             historial = historial[-50:]
-        marcados = marcar_mensajes_leidos(g.usuario.id, contacto.id)
+        mensajes_marcados, notificaciones_marcadas = marcar_conversacion_leida(
+            g.usuario.id, contacto.id
+        )
         mensajes_serializados = [
             mensaje_contexto(mensaje, g.usuario.id) for mensaje in historial
         ]
-        if marcados:
+        if mensajes_marcados or notificaciones_marcadas:
             db.session.commit()
         contrato = {
             "contacto": {
@@ -1427,7 +1443,7 @@ def create_app(test_config=None):
             limite=request.args.get("limite", default=50, type=int),
             antes_de_id=request.args.get("antes_de", type=int),
         )
-        marcar_mensajes_leidos(g.usuario.id, usuario_id)
+        marcar_conversacion_leida(g.usuario.id, usuario_id)
         mensajes_serializados = [
             mensaje_contexto(mensaje, g.usuario.id) for mensaje in historial
         ]
@@ -1438,6 +1454,52 @@ def create_app(test_config=None):
                 "mensajes": mensajes_serializados,
             }
         )
+
+    @app.get("/notificaciones")
+    @login_required
+    def notificaciones():
+        alertas = notificaciones_de(g.usuario.id, limite=50)
+        contrato = {
+            "notificaciones": [notificacion_contexto(item) for item in alertas],
+            "total_no_leidas": notificaciones_no_leidas_total(g.usuario.id),
+        }
+        return renderizar_contrato("notificaciones.html", contrato, **contrato)
+
+    @app.get("/api/v1/notificaciones")
+    @login_required
+    def api_notificaciones():
+        alertas = notificaciones_de(
+            g.usuario.id,
+            limite=request.args.get("limite", default=30, type=int),
+            solo_no_leidas=request.args.get("solo_no_leidas") == "1",
+        )
+        return jsonify(
+            {
+                "notificaciones": [
+                    notificacion_contexto(item) for item in alertas
+                ],
+                "total_no_leidas": notificaciones_no_leidas_total(g.usuario.id),
+            }
+        )
+
+    @app.post("/notificaciones/<int:notificacion_id>/leer")
+    @login_required
+    def leer_notificacion(notificacion_id):
+        notificacion = db.get_or_404(Notificacion, notificacion_id)
+        if notificacion.usuario_id != g.usuario.id:
+            abort(404)
+        if notificacion.marcar_leida():
+            db.session.commit()
+        return redirect(
+            _destino_seguro(notificacion.destino_url, url_for("notificaciones"))
+        ), 303
+
+    @app.post("/notificaciones/leer-todas")
+    @login_required
+    def leer_todas_notificaciones():
+        if marcar_notificaciones_leidas(g.usuario.id):
+            db.session.commit()
+        return redirect(url_for("notificaciones")), 303
 
     @app.get("/seguridad")
     @login_required
@@ -1639,4 +1701,9 @@ def create_app(test_config=None):
 
 
 if __name__ == "__main__":
-    create_app().run(debug=os.getenv("FLASK_DEBUG", "0") == "1")
+    aplicacion = create_app()
+    socketio.run(
+        aplicacion,
+        debug=os.getenv("FLASK_DEBUG", "0") == "1",
+        allow_unsafe_werkzeug=True,
+    )

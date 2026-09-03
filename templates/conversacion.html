@@ -14,25 +14,26 @@
   <a class="enlace-seguridad" href="{{ url_for('seguridad_persona', usuario_id=contacto.id) }}">Seguridad</a>
 </div>
 
-<section class="tarjeta chat-panel">
+<section class="tarjeta chat-panel" data-realtime-chat data-contact-id="{{ contacto.id }}">
   {% if paginacion.hay_anteriores %}
     <a class="cargar-anteriores" href="{{ url_for('conversacion', usuario_id=contacto.id, antes_de=paginacion.antes_de) }}">Ver mensajes anteriores</a>
   {% endif %}
-  <div class="lista-mensajes" aria-live="polite">
+  <div class="lista-mensajes" aria-live="polite" data-message-list>
     {% for mensaje in mensajes %}
-      <article class="burbuja-mensaje{% if mensaje.propio %} mensaje-propio{% else %} mensaje-ajeno{% endif %}">
+      <article class="burbuja-mensaje{% if mensaje.propio %} mensaje-propio{% else %} mensaje-ajeno{% endif %}" data-message-id="{{ mensaje.id }}" data-sender-id="{{ mensaje.emisor_id }}">
         <p>{{ mensaje.texto }}</p>
         <small>{{ mensaje.enviado_en[11:16] }}{% if mensaje.propio and mensaje.leido %} · Leído{% endif %}</small>
       </article>
     {% else %}
-      <div class="estado-vacio-mini">Saluda a {{ contacto.nombre }} y coordinen su primera sesión.</div>
+      <div class="estado-vacio-mini" data-empty-chat>Saluda a {{ contacto.nombre }} y coordinen su primera sesión.</div>
     {% endfor %}
   </div>
-  <form class="compositor-mensaje" method="post" action="{{ url_for('conversacion', usuario_id=contacto.id) }}">
+  <form class="compositor-mensaje" method="post" action="{{ url_for('conversacion', usuario_id=contacto.id) }}" data-message-form>
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     <label class="sr-only" for="texto">Mensaje</label>
     <textarea id="texto" name="texto" rows="2" maxlength="2000" placeholder="Escribe un mensaje…" required></textarea>
     <button class="boton" type="submit">Enviar</button>
   </form>
+  <p class="estado-realtime" data-realtime-status role="status">Conectando al chat en tiempo real…</p>
 </section>
 {% endblock %}

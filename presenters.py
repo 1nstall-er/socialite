@@ -275,6 +275,27 @@ def mensaje_contexto(mensaje: Any, usuario_actual_id: int) -> dict[str, Any]:
     }
 
 
+def notificacion_contexto(notificacion: Any) -> dict[str, Any]:
+    return {
+        "id": notificacion.id,
+        "tipo": notificacion.tipo.value,
+        "tipo_etiqueta": notificacion.tipo.etiqueta,
+        "titulo": notificacion.titulo,
+        "contenido": notificacion.contenido,
+        "destino_url": notificacion.destino_url,
+        "leida": notificacion.leida,
+        "creada_en": notificacion.creada_en.isoformat(),
+        "leida_en": (
+            notificacion.leida_en.isoformat() if notificacion.leida_en else None
+        ),
+        "actor": (
+            usuario_resumen_contexto(notificacion.actor)
+            if notificacion.actor is not None
+            else None
+        ),
+    }
+
+
 def conversacion_contexto(
     conexion: Any,
     usuario_actual: Any,

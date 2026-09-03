@@ -144,6 +144,10 @@ class EstadoReporte(EnumEtiquetado):
     DESCARTADO = ("descartado", "Descartado")
 
 
+class TipoNotificacion(EnumEtiquetado):
+    MENSAJE = ("mensaje", "Mensaje nuevo")
+
+
 @dataclass(frozen=True, slots=True)
 class CampusInfo:
     codigo: CampusUPC
@@ -614,6 +618,17 @@ class Usuario(db.Model):
         back_populates="receptor",
         cascade="all, delete-orphan",
     )
+    notificaciones = db.relationship(
+        "Notificacion",
+        foreign_keys="Notificacion.usuario_id",
+        back_populates="usuario",
+        cascade="all, delete-orphan",
+    )
+    notificaciones_originadas = db.relationship(
+        "Notificacion",
+        foreign_keys="Notificacion.actor_id",
+        back_populates="actor",
+    )
     perfil_upc = db.relationship(
         "PerfilUPC", back_populates="usuario", uselist=False,
         cascade="all, delete-orphan", single_parent=True,
@@ -1044,6 +1059,13 @@ class Mensaje(db.Model):
     receptor = db.relationship(
         "Usuario", foreign_keys=[receptor_id], back_populates="mensajes_recibidos"
     )
+    notificacion = db.relationship(
+        "Notificacion",
+        back_populates="mensaje",
+        cascade="all, delete-orphan",
+        single_parent=True,
+        uselist=False,
+    )
 
     @validates("texto")
     def validar_texto(self, _clave: str, valor: str) -> str:
@@ -1054,6 +1076,63 @@ class Mensaje(db.Model):
 
     def involucra(self, usuario_id: int) -> bool:
         return usuario_id in (self.emisor_id, self.receptor_id)
+
+
+class Notificacion(db.Model):
+    """Alerta persistente para una bandeja in-app auditable."""
+
+    __tablename__ = "notificaciones"
+    __table_args__ = (
+        db.CheckConstraint(
+            "actor_id IS NULL OR actor_id != usuario_id",
+            name="ck_notificacion_actor_distinto",
+        ),
+        db.Index(
+            "ix_notificaciones_usuario_leida_fecha",
+            "usuario_id",
+            "leida",
+            "creada_en",
+        ),
+    )
+
+    id = db.Column(db.Integer, primary_key=True)
+    usuario_id = db.Column(
+        db.Integer, db.ForeignKey("usuarios.id"), nullable=False, index=True
+    )
+    actor_id = db.Column(
+        db.Integer, db.ForeignKey("usuarios.id"), nullable=True, index=True
+    )
+    mensaje_id = db.Column(
+        db.Integer, db.ForeignKey("mensajes.id"), unique=True, nullable=True
+    )
+    tipo = db.Column(
+        _tipo_enum(TipoNotificacion, "tipo_notificacion"),
+        nullable=False,
+        index=True,
+    )
+    titulo = db.Column(db.String(120), nullable=False)
+    contenido = db.Column(db.String(200))
+    destino_url = db.Column(db.String(300), nullable=False)
+    leida = db.Column(db.Boolean, nullable=False, default=False, server_default="0")
+    creada_en = db.Column(
+        db.DateTime(timezone=True), nullable=False, default=lambda: datetime.now(UTC)
+    )
+    leida_en = db.Column(db.DateTime(timezone=True))
+
+    usuario = db.relationship(
+        "Usuario", foreign_keys=[usuario_id], back_populates="notificaciones"
+    )
+    actor = db.relationship(
+        "Usuario", foreign_keys=[actor_id], back_populates="notificaciones_originadas"
+    )
+    mensaje = db.relationship("Mensaje", back_populates="notificacion")
+
+    def marcar_leida(self) -> bool:
+        if self.leida:
+            return False
+        self.leida = True
+        self.leida_en = datetime.now(UTC)
+        return True
 
 
 class Reporte(db.Model):

@@ -5,7 +5,17 @@ from datetime import UTC, datetime
 from sqlalchemy import case, exists, func, or_, select, update
 from sqlalchemy.orm import joinedload, selectinload
 
-from models import Bloqueo, Conexion, Curso, Grupo, Mensaje, PerfilUPC, Usuario, db
+from models import (
+    Bloqueo,
+    Conexion,
+    Curso,
+    Grupo,
+    Mensaje,
+    Notificacion,
+    PerfilUPC,
+    Usuario,
+    db,
+)
 
 
 def _opciones_matching_usuario():
@@ -378,3 +388,54 @@ def marcar_mensajes_leidos(usuario_id, contacto_id):
     )
     resultado = db.session.execute(sentencia)
     return int(resultado.rowcount or 0)
+
+
+def notificaciones_de(usuario_id, limite=30, solo_no_leidas=False):
+    sentencia = (
+        select(Notificacion)
+        .where(Notificacion.usuario_id == usuario_id)
+        .options(joinedload(Notificacion.actor))
+        .order_by(Notificacion.creada_en.desc(), Notificacion.id.desc())
+        .limit(min(max(int(limite), 1), 100))
+    )
+    if solo_no_leidas:
+        sentencia = sentencia.where(Notificacion.leida.is_(False))
+    return db.session.execute(sentencia).scalars().all()
+
+
+def notificaciones_no_leidas_total(usuario_id):
+    sentencia = select(func.count(Notificacion.id)).where(
+        Notificacion.usuario_id == usuario_id,
+        Notificacion.leida.is_(False),
+    )
+    return int(db.session.execute(sentencia).scalar_one())
+
+
+def marcar_notificaciones_leidas(usuario_id):
+    sentencia = (
+        update(Notificacion)
+        .where(
+            Notificacion.usuario_id == usuario_id,
+            Notificacion.leida.is_(False),
+        )
+        .values(leida=True, leida_en=datetime.now(UTC))
+        .execution_options(synchronize_session="fetch")
+    )
+    resultado = db.session.execute(sentencia)
+    return int(resultado.rowcount or 0)
+
+
+def marcar_conversacion_leida(usuario_id, contacto_id):
+    mensajes_marcados = marcar_mensajes_leidos(usuario_id, contacto_id)
+    sentencia = (
+        update(Notificacion)
+        .where(
+            Notificacion.usuario_id == usuario_id,
+            Notificacion.leida.is_(False),
+            Notificacion.mensaje.has(Mensaje.emisor_id == contacto_id),
+        )
+        .values(leida=True, leida_en=datetime.now(UTC))
+        .execution_options(synchronize_session="fetch")
+    )
+    resultado = db.session.execute(sentencia)
+    return mensajes_marcados, int(resultado.rowcount or 0)

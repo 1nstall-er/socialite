@@ -196,6 +196,20 @@ El POST a la misma ruta acepta `texto` de 1 a 2000 caracteres. Los contratos
 JSON equivalentes están disponibles en `GET /api/v1/mensajes` y
 `GET /api/v1/mensajes/<usuario_id>`.
 
+`GET /notificaciones` → `notificaciones.html` entrega:
+
+- `notificaciones[]`: `id`, `tipo`, `tipo_etiqueta`, `titulo`, `contenido`,
+  `destino_url`, `leida`, timestamps y `actor`.
+- `total_no_leidas`.
+
+El contexto global de Jinja expone `notificaciones_no_leidas` para el badge de
+navegación. La API equivalente es `GET /api/v1/notificaciones`, que acepta
+`limite` y `solo_no_leidas=1`. Las acciones de lectura son POST a
+`/notificaciones/<id>/leer` y `/notificaciones/leer-todas`.
+
+Los eventos bidireccionales, acknowledgements y requisitos de autenticación se
+detallan en `docs/REALTIME.md`.
+
 ## Seguridad y moderación
 
 `GET /personas/<id>/seguridad` → `seguridad_persona.html` entrega:
