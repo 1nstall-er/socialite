@@ -186,7 +186,7 @@ def _owned_avatar_key(public_url: str, settings: S3Settings) -> str | None:
 
 
 def upload_image(archivo: FileStorage | None) -> str:
-    """Normaliza una imagen y devuelve su URL de S3 o su ruta estática local."""
+    """Normaliza una imagen y devuelve su URL de S3 o su nombre local."""
     stream = _normalize_avatar(archivo)
     try:
         settings = S3Settings.from_config(current_app.config)
@@ -202,11 +202,10 @@ def upload_image(archivo: FileStorage | None) -> str:
         if all(str(current_app.config.get(name) or "").strip() for name in required):
             raise
         filename = f"{secrets.token_urlsafe(24)}.jpg"
-        upload_dir = Path(current_app.static_folder or "static") / "uploads"
+        upload_dir = Path(current_app.config["AVATAR_UPLOAD_FOLDER"])
         upload_dir.mkdir(parents=True, exist_ok=True)
         (upload_dir / filename).write_bytes(stream.getvalue())
-        static_url = (current_app.static_url_path or "/static").rstrip("/")
-        return f"{static_url}/uploads/{filename}"
+        return filename
 
     key = f"{settings.avatar_prefix}/{secrets.token_urlsafe(24)}.jpg"
     try:
@@ -228,8 +227,16 @@ def upload_image(archivo: FileStorage | None) -> str:
 
 
 def delete_image(public_url: str | None) -> None:
-    """Borra solo URLs propias que pertenecen al prefijo aislado de avatares."""
+    """Borra avatares locales o URLs propias del prefijo remoto aislado."""
     if not public_url:
+        return
+    if re.fullmatch(AVATAR_TOKEN_PATTERN, public_url):
+        try:
+            (Path(current_app.config["AVATAR_UPLOAD_FOLDER"]) / public_url).unlink(
+                missing_ok=True
+            )
+        except OSError as error:
+            raise MediaStorageError("No pudimos eliminar la foto local.") from error
         return
     settings = S3Settings.from_config(current_app.config)
     key = _owned_avatar_key(public_url, settings)
