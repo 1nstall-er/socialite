@@ -1,10 +1,8 @@
 import logging
 import os
 import secrets
-from datetime import timedelta
 from functools import wraps
 from hmac import compare_digest
-from pathlib import Path
 
 from flask import (
     Flask,
@@ -31,6 +29,7 @@ from auth import (
     limpiar_fallos_login,
     registrar_login_fallido,
 )
+from config import build_config, validate_production_config
 from mailer import enviar_codigo_verificacion
 from matching import (
     GrafoAfinidadUPC,
@@ -215,57 +214,10 @@ def login_required(vista):
 
 def create_app(test_config=None):
     app = Flask(__name__)
-    app.config.from_mapping(
-        SECRET_KEY=os.getenv("SECRET_KEY", "clave-local-socialite"),
-        SQLALCHEMY_DATABASE_URI=os.getenv("DATABASE_URL", "sqlite:///socialite.db"),
-        SQLALCHEMY_TRACK_MODIFICATIONS=False,
-        CSRF_ENABLED=True,
-        SESSION_COOKIE_HTTPONLY=True,
-        SESSION_COOKIE_SAMESITE="Lax",
-        SESSION_COOKIE_SECURE=os.getenv("COOKIE_SECURE", "0") == "1",
-        PERMANENT_SESSION_LIFETIME=timedelta(hours=12),
-        MAX_CONTENT_LENGTH=6 * 1024 * 1024,
-        AVATAR_UPLOAD_FOLDER=os.getenv(
-            "AVATAR_UPLOAD_FOLDER", str(Path(app.instance_path) / "avatares")
-        ),
-        AUTO_CREATE_SCHEMA=os.getenv("AUTO_CREATE_SCHEMA", "0") == "1",
-        SYNC_UPC_CATALOG=os.getenv("SYNC_UPC_CATALOG", "1") == "1",
-        EMAIL_VERIFICATION_REQUIRED=os.getenv("EMAIL_VERIFICATION_REQUIRED", "1")
-        == "1",
-        MAIL_BACKEND=os.getenv("MAIL_BACKEND", "console"),
-        MAIL_SERVER=os.getenv("MAIL_SERVER", "localhost"),
-        MAIL_PORT=int(os.getenv("MAIL_PORT", "587")),
-        MAIL_USE_TLS=os.getenv("MAIL_USE_TLS", "1") == "1",
-        MAIL_USE_SSL=os.getenv("MAIL_USE_SSL", "0") == "1",
-        MAIL_USERNAME=os.getenv("MAIL_USERNAME"),
-        MAIL_PASSWORD=os.getenv("MAIL_PASSWORD"),
-        MAIL_DEFAULT_SENDER=os.getenv(
-            "MAIL_DEFAULT_SENDER", "Socialite <no-reply@socialite.local>"
-        ),
-        MAIL_TIMEOUT=int(os.getenv("MAIL_TIMEOUT", "10")),
-        LOGIN_MAX_FALLOS=int(os.getenv("LOGIN_MAX_FALLOS", "3")),
-        LOGIN_VENTANA_SEGUNDOS=int(os.getenv("LOGIN_VENTANA_SEGUNDOS", "60")),
-        REENVIO_VENTANA_SEGUNDOS=int(
-            os.getenv("REENVIO_VENTANA_SEGUNDOS", "60")
-        ),
-        SOCKETIO_ASYNC_MODE=os.getenv("SOCKETIO_ASYNC_MODE", "threading"),
-        SOCKET_MESSAGE_MAX=int(os.getenv("SOCKET_MESSAGE_MAX", "20")),
-        SOCKET_MESSAGE_WINDOW_SECONDS=int(
-            os.getenv("SOCKET_MESSAGE_WINDOW_SECONDS", "60")
-        ),
-    )
+    app.config.from_mapping(build_config(app.instance_path))
     if test_config:
         app.config.update(test_config)
-    if (
-        os.getenv("APP_ENV") == "production"
-        and app.config["SECRET_KEY"] == "clave-local-socialite"
-    ):
-        raise RuntimeError("SECRET_KEY es obligatoria en produccion")
-    if (
-        os.getenv("APP_ENV") == "production"
-        and str(app.config["MAIL_BACKEND"]).lower() != "smtp"
-    ):
-        raise RuntimeError("MAIL_BACKEND=smtp es obligatorio en produccion")
+    validate_production_config(app.config)
 
     logging.basicConfig(
         level=logging.INFO,

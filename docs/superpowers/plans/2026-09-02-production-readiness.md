@@ -30,7 +30,7 @@
 - Create: `tests/test_production_config.py`
 - Modify: `app.py:216-275`
 
-- [ ] **Step 1: Escribir las pruebas de configuración que deben fallar**
+- [x] **Step 1: Escribir las pruebas de configuración que deben fallar**
 
 Crear `tests/test_production_config.py` con una base de configuración completa y casos explícitos para desarrollo, producción válida y cada grupo obligatorio:
 
@@ -92,7 +92,7 @@ class ProductionConfigTestCase(unittest.TestCase):
                     validate_production_config(config)
 ```
 
-- [ ] **Step 2: Ejecutar la prueba y confirmar RED**
+- [x] **Step 2: Ejecutar la prueba y confirmar RED**
 
 Run:
 
@@ -102,7 +102,7 @@ Run:
 
 Expected: `ModuleNotFoundError: No module named 'config'`.
 
-- [ ] **Step 3: Implementar el constructor y validador tipados**
+- [x] **Step 3: Implementar el constructor y validador tipados**
 
 Crear `config.py` con estas interfaces y reglas completas:
 
@@ -242,7 +242,7 @@ def validate_production_config(config: Mapping[str, object]) -> None:
 
 La implementación final de `validate_production_config()` debe construir una lista de nombres (`secret`, `database`, `smtp`, `redis`, `socket_channel`, `s3`, `public_url`, `avatar_prefix`) y lanzar `RuntimeError("Configuración de producción inválida: " + ", ".join(errors))`. Solo se inspeccionan esquemas y presencia; nunca se incluyen valores sensibles en el mensaje.
 
-- [ ] **Step 4: Integrar la configuración en el factory**
+- [x] **Step 4: Integrar la configuración en el factory**
 
 En `app.py`, importar `build_config` y `validate_production_config`, reemplazar el bloque actual de `app.config.from_mapping` por:
 
@@ -255,7 +255,7 @@ validate_production_config(app.config)
 
 Eliminar las dos validaciones parciales que consultan `os.getenv("APP_ENV")`. Mantener `Path` porque la ruta de lectura de avatares legados todavía lo usa.
 
-- [ ] **Step 5: Ejecutar GREEN y regresión focalizada**
+- [x] **Step 5: Ejecutar GREEN y regresión focalizada**
 
 Run:
 
@@ -266,7 +266,7 @@ Run:
 
 Expected: todas las pruebas pasan y Ruff termina con `All checks passed!`.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```powershell
 git add config.py app.py tests/test_production_config.py
