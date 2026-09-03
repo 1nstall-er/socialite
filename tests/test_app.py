@@ -1,4 +1,6 @@
 import unittest
+import pytest
+import tempfile
 from io import BytesIO
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -33,23 +35,32 @@ from models import (
 
 class SocialiteTestCase(unittest.TestCase):
     def setUp(self):
-        self.directorio_temporal = TemporaryDirectory()
-        self.app = create_app(
-            {
-                "TESTING": True,
-                "SECRET_KEY": "test-secret",
-                "SQLALCHEMY_DATABASE_URI": "sqlite:///:memory:",
-                "CSRF_ENABLED": False,
-                "AVATAR_UPLOAD_FOLDER": self.directorio_temporal.name,
-            }
-        )
+        self.directorio_temporal = tempfile.TemporaryDirectory()
+        self.app = create_app({
+            "TESTING": True,
+            "SQLALCHEMY_DATABASE_URI": "sqlite:///:memory:",
+            "WTF_CSRF_ENABLED": False,
+            "CSRF_ENABLED": False,
+            "SECRET_KEY": "test",
+            "UPLOAD_FOLDER": self.directorio_temporal.name,
+        })
         self.client = self.app.test_client()
+        self.ctx = self.app.app_context()
+        self.ctx.push()
+        from models import db
+        db.create_all()
+        from models import sincronizar_catalogo_upc   # ← agrega
+        sincronizar_catalogo_upc() 
 
     def tearDown(self):
-        with self.app.app_context():
-            db.session.remove()
-            db.drop_all()
+        from models import db
+        db.session.remove()
+        db.drop_all()
+        self.ctx.pop()
         self.directorio_temporal.cleanup()
+
+    
+    
 
     @staticmethod
     def foto_prueba(color=(31, 107, 79), formato="PNG"):
