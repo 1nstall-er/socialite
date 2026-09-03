@@ -430,8 +430,12 @@ def preparar_perfil(usuario: UsuarioCompatible) -> PerfilPreparado:
     intereses_categorias: dict[str, str] = {}
     for interes in getattr(usuario, "intereses_catalogados", ()):
         clave = normalizar_texto(getattr(interes, "etiqueta", ""))
+        clave_catalogo = normalizar_texto(getattr(interes, "clave", ""))
+        if clave and clave_catalogo in intereses and clave_catalogo != clave:
+            valor = intereses.pop(clave_catalogo)
+            intereses.setdefault(clave, valor)
         categoria = _valor_enum(getattr(interes, "categoria", None))
-        if clave and categoria:
+        if clave in intereses and categoria:
             intereses_categorias[clave] = categoria
     contexto_upc = _contexto_upc(usuario)
     return {
