@@ -885,23 +885,25 @@ git commit -m "feat: integrate transactional s3 avatars"
 - Modify: `requirements.txt`
 - Modify: `README.md`
 
-- [ ] **Step 1: Añadir las dependencias de proceso fijadas**
+- [x] **Step 1: Añadir las dependencias de proceso fijadas**
 
 Agregar a `requirements.txt`:
 
 ```text
 gevent==26.8.0
 gevent-websocket==0.10.1
-gunicorn==26.2.0
+gunicorn[gevent]==26.2.0
+packaging==26.3
+psycopg[binary]==3.3.5
 ```
 
 Instalarlas para pruebas locales de importación:
 
 ```powershell
-& ..\..\.venv\Scripts\python.exe -m pip install gevent==26.8.0 gevent-websocket==0.10.1 gunicorn==26.2.0
+& ..\..\.venv\Scripts\python.exe -m pip install gevent==26.8.0 gevent-websocket==0.10.1 "gunicorn[gevent]==26.2.0" packaging==26.3 "psycopg[binary]==3.3.5"
 ```
 
-- [ ] **Step 2: Escribir pruebas RED del entrypoint y configuración de proceso**
+- [x] **Step 2: Escribir pruebas RED del entrypoint y configuración de proceso**
 
 Crear `tests/test_deployment.py` que cargue `gunicorn.conf.py` mediante `runpy.run_path`, y valide comportamiento en lugar de buscar texto:
 
@@ -954,7 +956,7 @@ class DeploymentTestCase(unittest.TestCase):
         self.assertEqual(result.stdout.strip(), "app")
 ```
 
-- [ ] **Step 3: Ejecutar y confirmar RED**
+- [x] **Step 3: Ejecutar y confirmar RED**
 
 Run:
 
@@ -964,7 +966,7 @@ Run:
 
 Expected: `FileNotFoundError` para `gunicorn.conf.py` y fallo al importar `wsgi`.
 
-- [ ] **Step 4: Crear entrypoint y configuración Gunicorn**
+- [x] **Step 4: Crear entrypoint y configuración Gunicorn**
 
 Crear `wsgi.py` con monkey patch antes de importar la aplicación:
 
@@ -1002,7 +1004,7 @@ release: python -m flask --app app:create_app db upgrade
 
 El proceso `release` es independiente del web; nunca encadenarlo en el arranque del contenedor.
 
-- [ ] **Step 5: Crear Dockerfile multi-stage y `.dockerignore`**
+- [x] **Step 5: Crear Dockerfile multi-stage y `.dockerignore`**
 
 `Dockerfile` debe usar `python:3.12-slim`, construir wheels en `builder`, instalarlos con `--no-index` en runtime, copiar el proyecto con dueño no root, crear el usuario `socialite`, exponer 8000 y ejecutar:
 
@@ -1012,7 +1014,7 @@ CMD ["gunicorn", "--config", "gunicorn.conf.py", "wsgi:application"]
 
 `.dockerignore` debe excluir `.git`, `.worktrees`, `.env`, `.env.*` salvo `.env.example`, `.venv`, `venv`, `instance`, `*.db`, `__pycache__`, `.pytest_cache`, `.mypy_cache`, `.ruff_cache`, `tests`, `docs` y archivos de cobertura.
 
-- [ ] **Step 6: Documentar entorno y operación**
+- [x] **Step 6: Documentar entorno y operación**
 
 Crear `.env.example` con todos los nombres de la especificación y marcadores no secretos. Crear `docs/DEPLOYMENT.md` con:
 
@@ -1027,7 +1029,7 @@ Crear `.env.example` con todos los nombres de la especificación y marcadores no
 
 Actualizar `README.md` con un enlace a `docs/DEPLOYMENT.md` y separar claramente ejecución local (`python app.py`) de producción (`gunicorn --config gunicorn.conf.py wsgi:application`).
 
-- [ ] **Step 7: Ejecutar GREEN y validar el paquete**
+- [x] **Step 7: Ejecutar GREEN y validar el paquete**
 
 Run:
 
@@ -1050,7 +1052,7 @@ docker image inspect socialite:production-ready --format '{{.Config.User}} {{jso
 
 Expected: imagen construida; el usuario no es `root` ni vacío y el comando apunta a Gunicorn. Si el daemon no está disponible, registrar exactamente ese bloqueo sin sustituirlo por una afirmación de éxito.
 
-- [ ] **Step 8: Commit**
+- [x] **Step 8: Commit**
 
 ```powershell
 git add requirements.txt wsgi.py gunicorn.conf.py Procfile Dockerfile .dockerignore .env.example docs/DEPLOYMENT.md tests/test_deployment.py README.md

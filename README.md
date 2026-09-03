@@ -7,8 +7,9 @@ companeros y creen grupos dentro del campus. El MVP esta enfocado en la UPC.
 
 - Registro restringido al correo institucional `@upc.edu.pe`, con código de
   verificación de un solo uso, caducidad, límite de intentos y reenvío protegido.
-- Foto obligatoria procesada por el servidor: valida el contenido, corrige la
-  orientación, elimina metadatos y genera un avatar cuadrado optimizado.
+- Foto obligatoria procesada completamente en memoria: valida el contenido,
+  corrige la orientación, elimina metadatos, genera un avatar cuadrado y lo
+  almacena cifrado en AWS S3.
 - Ingreso con contrasena almacenada de forma segura.
 - Perfil academico con foto, presentación, carrera, ciclo, cursos, intereses y
   horas disponibles.
@@ -38,6 +39,8 @@ companeros y creen grupos dentro del campus. El MVP esta enfocado en la UPC.
   fallback HTTP cuando el canal en tiempo real no está disponible.
 - Notificaciones in-app persistentes con contador y alertas instantáneas en
   todas las pestañas conectadas del destinatario.
+- Broker Redis para propagar salas, mensajes y notificaciones Socket.IO entre
+  varias réplicas sin convertir Redis en la fuente de verdad del chat.
 - Rate limiting thread-safe: tres fallos de login por IP y un reenvío de correo
   por minuto, además del cooldown persistido en base de datos.
 - Migraciones versionadas con Alembic/Flask-Migrate para evolucionar la base sin
@@ -48,6 +51,9 @@ companeros y creen grupos dentro del campus. El MVP esta enfocado en la UPC.
 - Flask 3
 - Flask-SQLAlchemy
 - Flask-SocketIO
+- Redis para coordinación en tiempo real
+- AWS S3/CloudFront para avatares
+- Gunicorn con Gevent en producción
 - Pillow para procesar imágenes sin confiar en la extensión del archivo
 - SQLite en desarrollo
 - HTML y CSS sin dependencias de frontend
@@ -56,6 +62,7 @@ companeros y creen grupos dentro del campus. El MVP esta enfocado en la UPC.
 ## Arquitectura de backend
 
 - `app.py`: rutas, validacion, autorizacion y contratos de respuesta.
+- `config.py`: construcción y validación fail-fast del entorno de producción.
 - `matching.py`: afinidad explicable, grafo UPC, BFS y max-heap Top‑K.
 - `queries.py`: planes de carga reutilizables que evitan N+1 y productos
   cartesianos entre colecciones.
@@ -64,6 +71,7 @@ companeros y creen grupos dentro del campus. El MVP esta enfocado en la UPC.
 - `messaging.py`: transacción y autorización compartida por HTTP y WebSocket.
 - `sockets.py`: eventos, salas autenticadas y rate limiting del canal realtime.
 - `media.py`: validación, normalización y almacenamiento privado de avatares.
+- `wsgi.py` y `gunicorn.conf.py`: entrada y proceso WebSocket de producción.
 - `verification.py`: reto criptográfico, expiración, intentos y reenvío.
 - `rate_limit.py`: ventana deslizante acotada y sustituible por Redis.
 - `mailer.py`: entrega transaccional por SMTP, consola local o memoria de prueba.
@@ -71,6 +79,9 @@ companeros y creen grupos dentro del campus. El MVP esta enfocado en la UPC.
 
 Los contratos que debe consumir el frontend estan documentados en
 `docs/JINJA_CONTEXT.md` y `docs/REALTIME.md`.
+
+La configuración operativa, migraciones y rollout están documentados en
+`docs/DEPLOYMENT.md`.
 
 Los hechos institucionales, fuentes y decisiones de modelado se documentan en
 `docs/UPC_DOMAIN.md`.
@@ -90,10 +101,9 @@ python app.py
 La aplicacion queda disponible en `http://127.0.0.1:5000`.
 
 En desarrollo, `MAIL_BACKEND=console` imprime el código de verificación en la
-terminal donde corre Flask. Para enviar correos reales, copia `.env.example` a
-`.env`, configura `MAIL_BACKEND=smtp` y completa las variables `MAIL_*` con tu
-proveedor. En producción el backend SMTP y una `SECRET_KEY` propia son
-obligatorios.
+terminal donde corre Flask. La navegación y los perfiles legados funcionan sin
+servicios externos; registrar una cuenta o cambiar la foto requiere configurar
+un bucket S3 porque el backend ya no escribe imágenes en el disco local.
 
 Si ya tenías una base creada antes de incorporar Alembic, márcala una sola vez
 con la revisión base y aplica el resto:
@@ -106,9 +116,9 @@ python -m flask --app app:create_app db upgrade
 Las cuentas existentes quedan marcadas como verificadas durante esa migración;
 las nuevas deben confirmar el código recibido.
 
-Para produccion, configura las variables `SECRET_KEY`, `DATABASE_URL` y,
-opcionalmente, `AVATAR_UPLOAD_FOLDER`. Por defecto las fotos viven en
-`instance/avatares`, fuera de los archivos públicos de Flask.
+Para producción, parte de `.env.example`, usa el gestor de secretos del
+proveedor y ejecuta el release command antes del proceso web. El despliegue
+completo está en `docs/DEPLOYMENT.md`.
 
 ## Pruebas
 
@@ -120,7 +130,7 @@ Para validar el tipado estricto del motor puro:
 
 ```powershell
 pip install -r requirements-dev.txt
-python -m mypy --strict matching.py verification.py auth.py rate_limit.py media.py
+python -m mypy matching.py verification.py auth.py rate_limit.py media.py config.py sockets.py --ignore-missing-imports --follow-imports=skip
 ```
 
 Para ejecutar el análisis estático del proyecto:
@@ -137,7 +147,6 @@ resultado visible. El endpoint Top‑10 usa un max-heap: construye la cola en
 
 ## Alcance pendiente
 
-El envío SMTP ya está listo, pero necesita las credenciales del proveedor de
-correo del despliegue. Para escalar Socket.IO a varios procesos se deberá
-sustituir el rate limiter en memoria y configurar una cola compartida como
-Redis; la interfaz actual mantiene ese cambio aislado de la lógica de dominio.
+El despliegue debe aportar credenciales reales de SMTP, Redis, S3 y PostgreSQL.
+Los rate limiters siguen siendo locales a cada réplica; una siguiente iteración
+puede mover sus contadores a Redis sin cambiar las reglas de negocio actuales.

@@ -3,6 +3,7 @@ import os
 import secrets
 from functools import wraps
 from hmac import compare_digest
+from pathlib import Path
 from urllib.parse import urlsplit
 
 from flask import (
@@ -226,6 +227,7 @@ def login_required(vista):
 
 def create_app(test_config=None):
     app = Flask(__name__)
+    Path(app.instance_path).mkdir(parents=True, exist_ok=True)
     app.config.from_mapping(build_config(app.instance_path))
     if test_config:
         app.config.update(test_config)
