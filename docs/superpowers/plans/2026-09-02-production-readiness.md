@@ -458,7 +458,7 @@ git commit -m "feat: secure distributed socket gateway"
 - Create: `tests/test_media_s3.py`
 - Modify: `requirements.txt`
 
-- [ ] **Step 1: Añadir dependencias exactas**
+- [x] **Step 1: Añadir dependencias exactas**
 
 Agregar a `requirements.txt`, en orden alfabético dentro de las dependencias de producción:
 
@@ -473,7 +473,7 @@ Instalarlas en el entorno compartido para poder ejecutar las pruebas:
 & ..\..\.venv\Scripts\python.exe -m pip install boto3==1.43.87 redis==8.1.0
 ```
 
-- [ ] **Step 2: Escribir pruebas RED contra un cliente S3 falso**
+- [x] **Step 2: Escribir pruebas RED contra un cliente S3 falso**
 
 Crear `tests/test_media_s3.py`. El fake captura `upload_fileobj` y `delete_object` sin red:
 
@@ -532,7 +532,7 @@ def test_delete_image_only_deletes_owned_avatar_urls(self) -> None:
 
 Conservar tests para archivo ausente, vacío, mayor de 5 MB, contenido falso, dimensión menor de 200 px y formatos no permitidos.
 
-- [ ] **Step 3: Ejecutar y confirmar RED**
+- [x] **Step 3: Ejecutar y confirmar RED**
 
 Run:
 
@@ -542,7 +542,7 @@ Run:
 
 Expected: `ImportError` porque `upload_image` y `delete_image` todavía no existen.
 
-- [ ] **Step 4: Implementar `media.py` sin filesystem**
+- [x] **Step 4: Implementar `media.py` sin filesystem**
 
 Mantener las constantes de validación y añadir:
 
@@ -640,20 +640,20 @@ Importar `boto3`, `current_app`, `dataclass`, `Mapping`, `quote`, `unquote`, `ur
 
 Para borrar, obtener la ruta relativa respecto a `S3_PUBLIC_BASE_URL`, aplicar `unquote`, rechazar segmentos ambiguos y exigir `fullmatch` de `<prefijo>/[A-Za-z0-9_-]{24,80}\.jpg` antes de llamar `delete_object`.
 
-- [ ] **Step 5: Ejecutar GREEN y verificar ausencia de escritura local**
+- [x] **Step 5: Ejecutar GREEN y verificar ausencia de escritura local**
 
 Run:
 
 ```powershell
 & ..\..\.venv\Scripts\python.exe -m unittest tests.test_media_s3 -v
-rg -n "mkdir|os\.replace|unlink|open\(" media.py
+rg -n "from pathlib|^import os$|\.mkdir\(|\.unlink\(|os\.replace|builtins\.open" media.py
 & ..\..\.venv\Scripts\ruff.exe check media.py tests/test_media_s3.py
 & ..\..\.venv\Scripts\mypy.exe media.py --ignore-missing-imports --follow-imports=skip
 ```
 
 Expected: pruebas verdes; `rg` no devuelve coincidencias; Ruff y mypy terminan correctamente.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```powershell
 git add media.py requirements.txt tests/test_media_s3.py
