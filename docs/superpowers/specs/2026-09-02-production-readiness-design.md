@@ -2,7 +2,7 @@
 
 **Fecha:** 2026-09-02
 
-**Estado:** Aprobado en conversación; pendiente de revisión del documento.
+**Estado:** Documento revisado y aprobado por el usuario.
 
 ## Objetivo
 
