@@ -1111,7 +1111,7 @@ $env:SYNC_UPC_CATALOG = "0"
 
 En otra terminal, ejecutar `Invoke-WebRequest http://127.0.0.1:5000/` y confirmar estado 200. Ejecutar las pruebas `tests.test_sockets` una vez más para handshake y mensajería autenticada. Detener el proceso con `Ctrl+C` y limpiar solo esas dos variables de entorno.
 
-- [ ] **Step 4: Preparar migración local recuperable después de integrar**
+- [x] **Step 4: Preparar migración local recuperable después de integrar**
 
 Antes de aplicar la migración a la base real, resolver y mostrar la ruta exacta de `instance/socialite.db`. Si existe, copiarla a `instance/backups/socialite-pre-avatar-url-<timestamp>.db` mediante `Copy-Item -LiteralPath`; verificar que origen y destino estén dentro del checkout. Luego ejecutar:
 
@@ -1121,7 +1121,7 @@ Antes de aplicar la migración a la base real, resolver y mostrar la ruta exacta
 
 No borrar el backup. Informar su ruta absoluta en la entrega.
 
-- [ ] **Step 5: Integrar, verificar el SHA remoto y subir a GitHub**
+- [x] **Step 5: Integrar, verificar el SHA remoto y subir a GitHub**
 
 Desde el checkout principal, integrar `codex/production-ready` sin sobrescribir cambios ajenos, volver a ejecutar la suite completa, y después:
 
