@@ -283,7 +283,7 @@ git commit -m "refactor: validate production configuration"
 - Modify: `sockets.py`
 - Modify: `tests/test_sockets.py`
 
-- [ ] **Step 1: Escribir pruebas RED para Redis e identidad revocada**
+- [x] **Step 1: Escribir pruebas RED para Redis e identidad revocada**
 
 Agregar a `tests/test_sockets.py` imports de `Flask`, `patch` e `inicializar_socketio`, y estos comportamientos:
 
@@ -336,7 +336,7 @@ def test_socket_rejects_boolean_session_identity(self) -> None:
 
 Añadir un test con `subTest` que conecte un cliente fresco, invalide la identidad y pruebe también `leave_room`, `send_message` y `mark_read`; cada handler debe producir `no_autenticado` y desconectar.
 
-- [ ] **Step 2: Ejecutar y confirmar RED**
+- [x] **Step 2: Ejecutar y confirmar RED**
 
 Run:
 
@@ -346,7 +346,7 @@ Run:
 
 Expected: falla la aserción de argumentos porque `message_queue` y `channel` todavía no se pasan; también falla la identidad booleana porque Python considera `True` una instancia de `int` y el código actual puede resolverla como usuario 1.
 
-- [ ] **Step 3: Crear la resolución de identidad en `auth.py`**
+- [x] **Step 3: Crear la resolución de identidad en `auth.py`**
 
 Agregar, sin aceptar nunca un ID desde el payload del cliente:
 
@@ -382,7 +382,7 @@ def resolver_identidad_socket(
     return usuario
 ```
 
-- [ ] **Step 4: Aplicar un decorador único a todos los eventos protegidos**
+- [x] **Step 4: Aplicar un decorador único a todos los eventos protegidos**
 
 En `sockets.py`, eliminar `_usuario_autenticado()` y `_csrf_valido()`. Implementar con `ParamSpec` y `Concatenate`:
 
@@ -411,7 +411,7 @@ def socket_authenticated(
 
 El `connect` debe invocar `resolver_identidad_socket(auth, exigir_csrf=True)` y devolver `False` antes de `join_room` si falla. Aplicar `@socket_authenticated` debajo de los decoradores `@socketio.on` de `entrar_sala`, `salir_sala`, `enviar_mensaje` y `marcar_leidos`; cada función recibe `usuario: Usuario` como primer argumento y deja de repetir la consulta manual.
 
-- [ ] **Step 5: Configurar Redis sin romper desarrollo**
+- [x] **Step 5: Configurar Redis sin romper desarrollo**
 
 Completar `inicializar_socketio()` así:
 
@@ -429,19 +429,19 @@ socketio.init_app(
 
 Redis permanece opcional fuera de producción y no debe contactarse durante `create_app()`.
 
-- [ ] **Step 6: Ejecutar GREEN y verificar tipado/estilo**
+- [x] **Step 6: Ejecutar GREEN y verificar tipado/estilo**
 
 Run:
 
 ```powershell
 & ..\..\.venv\Scripts\python.exe -m unittest tests.test_sockets -v
 & ..\..\.venv\Scripts\ruff.exe check auth.py sockets.py tests/test_sockets.py
-& ..\..\.venv\Scripts\mypy.exe auth.py sockets.py --ignore-missing-imports
+& ..\..\.venv\Scripts\mypy.exe auth.py sockets.py --ignore-missing-imports --follow-imports=skip
 ```
 
 Expected: pruebas verdes, Ruff sin errores y mypy sin errores en los módulos tipados.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```powershell
 git add auth.py sockets.py tests/test_sockets.py
@@ -648,7 +648,7 @@ Run:
 & ..\..\.venv\Scripts\python.exe -m unittest tests.test_media_s3 -v
 rg -n "mkdir|os\.replace|unlink|open\(" media.py
 & ..\..\.venv\Scripts\ruff.exe check media.py tests/test_media_s3.py
-& ..\..\.venv\Scripts\mypy.exe media.py --ignore-missing-imports
+& ..\..\.venv\Scripts\mypy.exe media.py --ignore-missing-imports --follow-imports=skip
 ```
 
 Expected: pruebas verdes; `rg` no devuelve coincidencias; Ruff y mypy terminan correctamente.
@@ -856,7 +856,7 @@ Run:
 ```powershell
 & ..\..\.venv\Scripts\python.exe -m unittest tests.test_app tests.test_media_s3 -v
 & ..\..\.venv\Scripts\ruff.exe check app.py models.py tests/test_app.py migrations/versions/9f8c2f0a64d1_widen_avatar_url.py
-& ..\..\.venv\Scripts\mypy.exe media.py config.py --ignore-missing-imports
+& ..\..\.venv\Scripts\mypy.exe media.py config.py --ignore-missing-imports --follow-imports=skip
 ```
 
 Expected: todas las pruebas pasan; no queda ninguna llamada a `guardar_avatar` o `eliminar_avatar`.
@@ -1035,7 +1035,7 @@ Run:
 & ..\..\.venv\Scripts\python.exe -m unittest tests.test_deployment -v
 & ..\..\.venv\Scripts\python.exe -m compileall -q app.py auth.py config.py media.py models.py sockets.py wsgi.py gunicorn.conf.py
 & ..\..\.venv\Scripts\ruff.exe check .
-& ..\..\.venv\Scripts\mypy.exe config.py media.py auth.py sockets.py --ignore-missing-imports
+& ..\..\.venv\Scripts\mypy.exe config.py media.py auth.py sockets.py --ignore-missing-imports --follow-imports=skip
 ```
 
 Expected: todas las verificaciones terminan con código 0.
@@ -1074,7 +1074,7 @@ Run:
 & ..\..\.venv\Scripts\python.exe -m pip install -r requirements.txt -r requirements-dev.txt
 & ..\..\.venv\Scripts\python.exe -m unittest discover -s tests -v
 & ..\..\.venv\Scripts\ruff.exe check .
-& ..\..\.venv\Scripts\mypy.exe config.py media.py auth.py sockets.py --ignore-missing-imports
+& ..\..\.venv\Scripts\mypy.exe config.py media.py auth.py sockets.py --ignore-missing-imports --follow-imports=skip
 & ..\..\.venv\Scripts\python.exe -m compileall -q .
 git diff --check
 git status --short

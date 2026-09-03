@@ -1,8 +1,11 @@
 import unittest
+from unittest.mock import patch
+
+from flask import Flask
 
 from app import create_app
 from models import Bloqueo, Conexion, Mensaje, Notificacion, Usuario, db
-from sockets import socketio
+from sockets import inicializar_socketio, socketio
 from verification import completar_verificacion
 
 
@@ -94,6 +97,100 @@ class SocketSocialiteTestCase(unittest.TestCase):
             auth={"csrf_token": "csrf-invitado"},
         )
         self.assertFalse(no_verificado.is_connected())
+
+    def test_socket_rechaza_identidad_booleana_en_la_sesion(self):
+        cliente_http = self._cliente_http(True, "csrf-booleano")
+        cliente_socket = socketio.test_client(
+            self.app,
+            flask_test_client=cliente_http,
+            auth={"csrf_token": "csrf-booleano"},
+        )
+
+        self.assertFalse(cliente_socket.is_connected())
+
+    def test_socketio_configura_broker_redis_y_canal(self):
+        aplicacion = Flask("socket-config-test")
+        aplicacion.config.update(
+            SOCKETIO_ASYNC_MODE="threading",
+            REDIS_URL="redis://redis:6379/0",
+            SOCKETIO_CHANNEL="socialite-test",
+            SOCKET_MESSAGE_MAX=3,
+            SOCKET_MESSAGE_WINDOW_SECONDS=60,
+        )
+
+        with patch.object(socketio, "init_app") as init_app:
+            inicializar_socketio(aplicacion)
+
+        init_app.assert_called_once_with(
+            aplicacion,
+            async_mode="threading",
+            manage_session=True,
+            cors_allowed_origins=None,
+            max_http_buffer_size=16_384,
+            message_queue="redis://redis:6379/0",
+            channel="socialite-test",
+        )
+
+    def test_evento_protegido_desconecta_si_el_usuario_fue_eliminado(self):
+        cliente_socket = socketio.test_client(
+            self.app,
+            flask_test_client=self.ana_http,
+            auth={"csrf_token": "csrf-ana"},
+        )
+        self.assertTrue(cliente_socket.is_connected())
+
+        with self.app.app_context():
+            db.session.delete(db.session.get(Usuario, self.ana_id))
+            db.session.commit()
+
+        respuesta = cliente_socket.emit(
+            "join_room", {"contacto_id": self.bruno_id}, callback=True
+        )
+        self.assertEqual(respuesta["error"]["codigo"], "no_autenticado")
+        self.assertFalse(cliente_socket.is_connected())
+
+    def test_todos_los_eventos_protegidos_revalidan_la_identidad(self):
+        eventos = ("join_room", "leave_room", "send_message", "mark_read")
+        for indice, evento in enumerate(eventos, start=1):
+            with self.subTest(evento=evento), self.app.app_context():
+                usuario = Usuario(
+                    nombre=f"Usuario {indice}",
+                    correo_institucional=f"usuario{indice}@upc.edu.pe",
+                )
+                usuario.set_password("segura1234")
+                completar_verificacion(usuario)
+                db.session.add(usuario)
+                db.session.flush()
+                db.session.add(
+                    Conexion(
+                        remitente_id=usuario.id,
+                        destinatario_id=self.bruno_id,
+                        estado="aceptada",
+                    )
+                )
+                db.session.commit()
+                usuario_id = usuario.id
+
+            token = f"csrf-{indice}"
+            cliente_http = self._cliente_http(usuario_id, token)
+            cliente_socket = socketio.test_client(
+                self.app,
+                flask_test_client=cliente_http,
+                auth={"csrf_token": token},
+            )
+            self.assertTrue(cliente_socket.is_connected())
+
+            with self.app.app_context():
+                db.session.delete(db.session.get(Usuario, usuario_id))
+                db.session.commit()
+
+            respuesta = cliente_socket.emit(
+                evento,
+                {"contacto_id": self.bruno_id, "texto": "No debe procesarse"},
+                callback=True,
+            )
+            self.assertEqual(respuesta["error"]["codigo"], "no_autenticado")
+            self.assertFalse(cliente_socket.is_connected())
 
     def test_mensaje_socket_es_atomico_y_notifica_al_destinatario_conectado(self):
         ana_socket = socketio.test_client(

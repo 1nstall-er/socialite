@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
-from hmac import compare_digest
-from typing import Any
+from collections.abc import Callable
+from functools import wraps
+from typing import Any, Concatenate, ParamSpec, TypeVar
 
 from flask import Flask, current_app, session
 from flask_socketio import SocketIO, disconnect, emit, join_room, leave_room
 
+from auth import resolver_identidad_socket
 from messaging import ErrorMensajeria, crear_mensaje
 from models import Usuario, db
 from presenters import mensaje_contexto, notificacion_contexto
@@ -19,6 +21,8 @@ from queries import (
 from rate_limit import LimitadorVentanaDeslizante
 
 socketio = SocketIO()
+P = ParamSpec("P")
+R = TypeVar("R")
 
 
 def _sala_usuario(usuario_id: int) -> str:
@@ -28,30 +32,6 @@ def _sala_usuario(usuario_id: int) -> str:
 def _sala_chat(usuario_a_id: int, usuario_b_id: int) -> str:
     primero, segundo = sorted((usuario_a_id, usuario_b_id))
     return f"chat:{primero}:{segundo}"
-
-
-def _usuario_autenticado() -> Usuario | None:
-    usuario_id = session.get("usuario_id")
-    if not isinstance(usuario_id, int):
-        return None
-    usuario = db.session.get(Usuario, usuario_id)
-    if usuario is None:
-        return None
-    if current_app.config["EMAIL_VERIFICATION_REQUIRED"] and not usuario.correo_verificado:
-        return None
-    return usuario
-
-
-def _csrf_valido(auth: Any) -> bool:
-    if not current_app.config["CSRF_ENABLED"]:
-        return True
-    esperado = session.get("_csrf_token")
-    recibido = auth.get("csrf_token") if isinstance(auth, dict) else None
-    return (
-        isinstance(esperado, str)
-        and isinstance(recibido, str)
-        and compare_digest(esperado, recibido)
-    )
 
 
 def _contacto_id(datos: Any) -> int | None:
@@ -88,10 +68,25 @@ def _sesion_invalida() -> dict[str, Any]:
     return respuesta
 
 
+def socket_authenticated(
+    handler: Callable[Concatenate[Usuario, P], R],
+) -> Callable[P, R | dict[str, Any]]:
+    """Revalida la sesión antes de cada operación sensible del socket."""
+
+    @wraps(handler)
+    def protected(*args: P.args, **kwargs: P.kwargs) -> R | dict[str, Any]:
+        usuario = resolver_identidad_socket()
+        if usuario is None:
+            return _sesion_invalida()
+        return handler(usuario, *args, **kwargs)
+
+    return protected
+
+
 @socketio.on("connect")  # type: ignore[untyped-decorator]
 def conectar(auth: Any = None) -> bool | None:
-    usuario = _usuario_autenticado()
-    if usuario is None or not _csrf_valido(auth):
+    usuario = resolver_identidad_socket(auth, exigir_csrf=True)
+    if usuario is None:
         return False
     join_room(_sala_usuario(usuario.id))
     current_app.logger.debug("Socket conectado para usuario_id=%s", usuario.id)
@@ -116,11 +111,9 @@ def desconectar(_razon: str | None = None) -> None:
 
 
 @socketio.on("join_room")  # type: ignore[untyped-decorator]
-def entrar_sala(datos: Any) -> dict[str, Any]:
-    usuario = _usuario_autenticado()
+@socket_authenticated
+def entrar_sala(usuario: Usuario, datos: Any) -> dict[str, Any]:
     contacto_id = _contacto_id(datos)
-    if usuario is None:
-        return _sesion_invalida()
     if contacto_id is None or not _autorizar_contacto(usuario, contacto_id):
         return _error("chat_no_autorizado", "No tienes acceso a esta conversación.")
     join_room(_sala_chat(usuario.id, contacto_id))
@@ -128,11 +121,9 @@ def entrar_sala(datos: Any) -> dict[str, Any]:
 
 
 @socketio.on("leave_room")  # type: ignore[untyped-decorator]
-def salir_sala(datos: Any) -> dict[str, Any]:
-    usuario = _usuario_autenticado()
+@socket_authenticated
+def salir_sala(usuario: Usuario, datos: Any) -> dict[str, Any]:
     contacto_id = _contacto_id(datos)
-    if usuario is None:
-        return _sesion_invalida()
     if contacto_id is None:
         return _error("destinatario_invalido", "La conversación no es válida.")
     leave_room(_sala_chat(usuario.id, contacto_id))
@@ -140,11 +131,9 @@ def salir_sala(datos: Any) -> dict[str, Any]:
 
 
 @socketio.on("send_message")  # type: ignore[untyped-decorator]
-def enviar_mensaje(datos: Any) -> dict[str, Any]:
-    usuario = _usuario_autenticado()
+@socket_authenticated
+def enviar_mensaje(usuario: Usuario, datos: Any) -> dict[str, Any]:
     contacto_id = _contacto_id(datos)
-    if usuario is None:
-        return _sesion_invalida()
     if contacto_id is None or not isinstance(datos, dict):
         return _error("destinatario_invalido", "La conversación no es válida.")
 
@@ -186,11 +175,9 @@ def enviar_mensaje(datos: Any) -> dict[str, Any]:
 
 
 @socketio.on("mark_read")  # type: ignore[untyped-decorator]
-def marcar_leidos(datos: Any) -> dict[str, Any]:
-    usuario = _usuario_autenticado()
+@socket_authenticated
+def marcar_leidos(usuario: Usuario, datos: Any) -> dict[str, Any]:
     contacto_id = _contacto_id(datos)
-    if usuario is None:
-        return _sesion_invalida()
     if contacto_id is None or not _autorizar_contacto(usuario, contacto_id):
         return _error("chat_no_autorizado", "No tienes acceso a esta conversación.")
 
@@ -229,6 +216,8 @@ def inicializar_socketio(app: Flask) -> None:
         manage_session=True,
         cors_allowed_origins=None,
         max_http_buffer_size=16_384,
+        message_queue=app.config.get("REDIS_URL") or None,
+        channel=app.config["SOCKETIO_CHANNEL"],
     )
     app.extensions["socket_message_rate_limiter"] = LimitadorVentanaDeslizante(
         app.config["SOCKET_MESSAGE_MAX"],

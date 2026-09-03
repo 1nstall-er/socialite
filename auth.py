@@ -2,8 +2,12 @@
 
 from __future__ import annotations
 
-from typing import Final
+from hmac import compare_digest
+from typing import Any, Final
 
+from flask import current_app, session
+
+from models import Usuario, db
 from rate_limit import DecisionLimite, LimitadorVentanaDeslizante
 
 DOMINIOS_PERMITIDOS: Final[tuple[str, ...]] = ("upc.edu.pe",)
@@ -55,3 +59,29 @@ def limpiar_fallos_login(
     limitador: LimitadorVentanaDeslizante, direccion_ip: str | None
 ) -> None:
     limitador.limpiar(normalizar_clave_ip(direccion_ip))
+
+
+def resolver_identidad_socket(
+    auth: Any = None, *, exigir_csrf: bool = False
+) -> Usuario | None:
+    """Resuelve la identidad exclusivamente desde la sesión HTTP firmada."""
+    usuario_id = session.get("usuario_id")
+    if isinstance(usuario_id, bool) or not isinstance(usuario_id, int):
+        return None
+
+    usuario = db.session.get(Usuario, usuario_id)
+    if usuario is None:
+        return None
+    if current_app.config["EMAIL_VERIFICATION_REQUIRED"] and not usuario.correo_verificado:
+        return None
+
+    if exigir_csrf and current_app.config["CSRF_ENABLED"]:
+        esperado = session.get("_csrf_token")
+        recibido = auth.get("csrf_token") if isinstance(auth, dict) else None
+        if not (
+            isinstance(esperado, str)
+            and isinstance(recibido, str)
+            and compare_digest(esperado, recibido)
+        ):
+            return None
+    return usuario
