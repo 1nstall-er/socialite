@@ -9,6 +9,7 @@ from datetime import UTC, date, datetime
 from enum import StrEnum
 from typing import Final, Self, TypeVar
 from unicodedata import category, normalize
+from urllib.parse import urlsplit
 
 from flask_sqlalchemy import SQLAlchemy
 from sqlalchemy.orm import validates
@@ -562,7 +563,7 @@ class Usuario(db.Model):
     nombre = db.Column(db.String(80), nullable=False)
     correo_institucional = db.Column(db.String(120), unique=True, nullable=False, index=True)
     password_hash = db.Column(db.String(255), nullable=False)
-    foto_archivo = db.Column(db.String(160))
+    foto_archivo = db.Column(db.String(500))
     biografia = db.Column(db.String(220))
     carrera = db.Column(db.String(80))
     ciclo = db.Column(db.Integer)
@@ -664,9 +665,23 @@ class Usuario(db.Model):
     def validar_foto_archivo(self, _clave: str, valor: str | None) -> str | None:
         if valor is None:
             return None
-        if not re.fullmatch(r"[A-Za-z0-9_-]{24,80}\.jpg", valor):
-            raise ValueError("El nombre interno del avatar no es válido")
-        return valor
+        limpio = valor.strip()
+        legado = re.fullmatch(r"[A-Za-z0-9_-]{24,80}\.jpg", limpio)
+        parsed = urlsplit(limpio)
+        remoto = (
+            len(limpio) <= 500
+            and parsed.scheme == "https"
+            and bool(parsed.netloc)
+            and parsed.username is None
+            and parsed.password is None
+            and not parsed.query
+            and not parsed.fragment
+            and parsed.path.endswith(".jpg")
+            and not any(caracter.isspace() for caracter in limpio)
+        )
+        if not legado and not remoto:
+            raise ValueError("La referencia del avatar no es válida")
+        return limpio
 
     @property
     def lista_intereses(self) -> list[str]:
@@ -693,6 +708,8 @@ class Usuario(db.Model):
     def foto_url(self) -> str | None:
         if not self.foto_archivo:
             return None
+        if urlsplit(self.foto_archivo).scheme == "https":
+            return self.foto_archivo
         return f"/media/avatares/{self.foto_archivo}"
 
     @property

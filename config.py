@@ -118,8 +118,15 @@ def validate_production_config(config: Mapping[str, object]) -> None:
     ):
         errors.append("smtp")
 
-    parsed_redis = urlsplit(redis_url)
-    if parsed_redis.scheme not in {"redis", "rediss"} or not parsed_redis.netloc:
+    try:
+        parsed_redis = urlsplit(redis_url)
+    except ValueError:
+        parsed_redis = None
+    if (
+        parsed_redis is None
+        or parsed_redis.scheme not in {"redis", "rediss"}
+        or not parsed_redis.netloc
+    ):
         errors.append("redis")
     if not _configured(config, "SOCKETIO_CHANNEL"):
         errors.append("socket_channel")
@@ -133,9 +140,13 @@ def validate_production_config(config: Mapping[str, object]) -> None:
     if not all(_configured(config, field) for field in s3_fields):
         errors.append("s3")
 
-    parsed_public = urlsplit(public_url)
+    try:
+        parsed_public = urlsplit(public_url)
+    except ValueError:
+        parsed_public = None
     if (
-        parsed_public.scheme != "https"
+        parsed_public is None
+        or parsed_public.scheme != "https"
         or not parsed_public.netloc
         or parsed_public.username is not None
         or parsed_public.password is not None

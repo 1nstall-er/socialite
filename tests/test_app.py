@@ -1,10 +1,12 @@
 import unittest
 from io import BytesIO
-from pathlib import Path
 from tempfile import TemporaryDirectory
+from typing import Any
+from unittest.mock import patch
 
 from PIL import Image
 from sqlalchemy import event
+from sqlalchemy.exc import SQLAlchemyError
 
 from app import create_app
 from matching import (
@@ -40,9 +42,32 @@ from models import (
 from verification import completar_verificacion
 
 
+class FakeS3Client:
+    def __init__(self):
+        self.uploads: list[dict[str, Any]] = []
+        self.deletes: list[dict[str, str]] = []
+
+    def upload_fileobj(self, stream, bucket, key, ExtraArgs):
+        self.uploads.append(
+            {
+                "bytes": stream.read(),
+                "bucket": bucket,
+                "key": key,
+                "args": ExtraArgs,
+            }
+        )
+
+    def delete_object(self, **kwargs):
+        self.deletes.append(kwargs)
+
+
 class SocialiteTestCase(unittest.TestCase):
     def setUp(self):
         self.directorio_temporal = TemporaryDirectory()
+        self.s3 = FakeS3Client()
+        self.s3_patcher = patch("media.boto3.client", return_value=self.s3)
+        self.s3_patcher.start()
+        self.addCleanup(self.s3_patcher.stop)
         self.app = create_app(
             {
                 "TESTING": True,
@@ -52,6 +77,12 @@ class SocialiteTestCase(unittest.TestCase):
                 "AVATAR_UPLOAD_FOLDER": self.directorio_temporal.name,
                 "EMAIL_VERIFICATION_REQUIRED": False,
                 "MAIL_BACKEND": "memory",
+                "AWS_ACCESS_KEY_ID": "test-access-key",
+                "AWS_SECRET_ACCESS_KEY": "test-secret-key",
+                "AWS_REGION": "us-east-1",
+                "AWS_S3_BUCKET": "socialite-test-media",
+                "S3_PUBLIC_BASE_URL": "https://media.example.com",
+                "S3_AVATAR_PREFIX": "avatars",
             }
         )
         self.client = self.app.test_client()
@@ -191,15 +222,13 @@ class SocialiteTestCase(unittest.TestCase):
         self.assertIn("Mi perfil", respuesta.get_data(as_text=True))
         with self.app.app_context():
             usuario = Usuario.query.one()
-            ruta = Path(self.directorio_temporal.name) / usuario.foto_archivo
-            self.assertTrue(ruta.is_file())
-            with Image.open(ruta) as avatar:
-                self.assertEqual(avatar.format, "JPEG")
-                self.assertEqual(avatar.size, (640, 640))
-
-        with self.client.get(usuario.foto_url) as media:
-            self.assertEqual(media.status_code, 200)
-            self.assertEqual(media.mimetype, "image/jpeg")
+            self.assertTrue(
+                usuario.foto_archivo.startswith("https://media.example.com/avatars/")
+            )
+            self.assertEqual(usuario.foto_url, usuario.foto_archivo)
+        with Image.open(BytesIO(self.s3.uploads[-1]["bytes"])) as avatar:
+            self.assertEqual(avatar.format, "JPEG")
+            self.assertEqual(avatar.size, (640, 640))
 
     def test_perfil_reemplaza_foto_y_elimina_version_anterior(self):
         self.registrar()
@@ -224,10 +253,132 @@ class SocialiteTestCase(unittest.TestCase):
             self.assertEqual(
                 usuario.biografia, "Me gustan los proyectos interdisciplinarios."
             )
-            self.assertFalse((Path(self.directorio_temporal.name) / anterior).exists())
             self.assertTrue(
-                (Path(self.directorio_temporal.name) / usuario.foto_archivo).exists()
+                usuario.foto_archivo.startswith("https://media.example.com/avatars/")
             )
+            self.assertEqual(len(self.s3.uploads), 2)
+            self.assertEqual(
+                self.s3.deletes,
+                [
+                    {
+                        "Bucket": "socialite-test-media",
+                        "Key": anterior.removeprefix("https://media.example.com/"),
+                    }
+                ],
+            )
+
+    def test_usuario_acepta_avatar_https_y_preserva_url_legada(self):
+        with self.app.app_context():
+            remoto = Usuario(
+                nombre="Remota",
+                correo_institucional="remota@upc.edu.pe",
+                password_hash="hash",
+                foto_archivo="https://media.example.com/avatars/" + "a" * 32 + ".jpg",
+            )
+            self.assertEqual(remoto.foto_url, remoto.foto_archivo)
+            legado = Usuario(
+                nombre="Legada",
+                correo_institucional="legada@upc.edu.pe",
+                password_hash="hash",
+                foto_archivo="a" * 32 + ".jpg",
+            )
+            self.assertEqual(
+                legado.foto_url, "/media/avatares/" + legado.foto_archivo
+            )
+            self.assertEqual(Usuario.__table__.c.foto_archivo.type.length, 500)
+
+    def test_registro_compensa_carga_nueva_si_falla_el_commit(self):
+        remoto = "https://media.example.com/avatars/" + "b" * 32 + ".jpg"
+        with (
+            patch("app.upload_image", return_value=remoto),
+            patch("app.delete_image") as eliminar,
+            patch.object(
+                db.session,
+                "commit",
+                side_effect=SQLAlchemyError("database unavailable"),
+            ),
+        ):
+            respuesta = self.registrar()
+
+        self.assertIn(
+            "No pudimos crear tu cuenta", respuesta.get_data(as_text=True)
+        )
+        eliminar.assert_called_once_with(remoto)
+        with self.app.app_context():
+            self.assertEqual(Usuario.query.count(), 0)
+
+    def test_perfil_elimina_avatar_anterior_solo_despues_del_commit(self):
+        self.registrar()
+        with self.app.app_context():
+            anterior = Usuario.query.one().foto_archivo
+
+        reemplazo = "https://media.example.com/avatars/" + "d" * 32 + ".jpg"
+        eventos: list[str] = []
+        commit_real = db.session.commit
+
+        def subir(_archivo):
+            eventos.append("upload")
+            return reemplazo
+
+        def confirmar():
+            eventos.append("commit")
+            return commit_real()
+
+        def eliminar(url):
+            self.assertEqual(url, anterior)
+            eventos.append("delete-old")
+
+        with (
+            patch("app.upload_image", side_effect=subir),
+            patch("app.delete_image", side_effect=eliminar),
+            patch.object(db.session, "commit", side_effect=confirmar),
+        ):
+            respuesta = self.client.post(
+                "/perfil",
+                data={
+                    "nombre": "Ana Actualizada",
+                    "carrera": "Ingenieria de Software",
+                    "ciclo": "6",
+                    "foto": self.foto_prueba(formato="JPEG"),
+                },
+                follow_redirects=True,
+            )
+
+        self.assertIn("Perfil actualizado", respuesta.get_data(as_text=True))
+        self.assertEqual(eventos, ["upload", "commit", "delete-old"])
+
+    def test_perfil_compensa_reemplazo_si_falla_el_commit(self):
+        self.registrar()
+        with self.app.app_context():
+            anterior = Usuario.query.one().foto_archivo
+
+        reemplazo = "https://media.example.com/avatars/" + "e" * 32 + ".jpg"
+        with (
+            patch("app.upload_image", return_value=reemplazo),
+            patch("app.delete_image") as eliminar,
+            patch.object(
+                db.session,
+                "commit",
+                side_effect=SQLAlchemyError("database unavailable"),
+            ),
+        ):
+            respuesta = self.client.post(
+                "/perfil",
+                data={
+                    "nombre": "Ana Actualizada",
+                    "carrera": "Ingenieria de Software",
+                    "ciclo": "6",
+                    "foto": self.foto_prueba(formato="JPEG"),
+                },
+                follow_redirects=True,
+            )
+
+        self.assertIn(
+            "No pudimos guardar los cambios", respuesta.get_data(as_text=True)
+        )
+        eliminar.assert_called_once_with(reemplazo)
+        with self.app.app_context():
+            self.assertEqual(Usuario.query.one().foto_archivo, anterior)
 
     def test_formularios_rechazan_envios_sin_token_csrf(self):
         self.app.config["CSRF_ENABLED"] = True
@@ -620,6 +771,10 @@ class SocialiteTestCase(unittest.TestCase):
         self.assertEqual(respuesta.headers["X-Frame-Options"], "DENY")
         self.assertIn("frame-ancestors 'none'", respuesta.headers["Content-Security-Policy"])
         self.assertNotIn("unsafe-inline", respuesta.headers["Content-Security-Policy"])
+        self.assertIn(
+            "img-src 'self' data: https://media.example.com",
+            respuesta.headers["Content-Security-Policy"],
+        )
 
     def test_matching_evitar_n_mas_uno_al_crecer_candidatos(self):
         with self.app.app_context():

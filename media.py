@@ -56,7 +56,12 @@ class S3Settings:
                 "El almacenamiento de imágenes no está configurado."
             )
 
-        public = urlsplit(values["S3_PUBLIC_BASE_URL"])
+        try:
+            public = urlsplit(values["S3_PUBLIC_BASE_URL"])
+        except ValueError as error:
+            raise MediaStorageError(
+                "La configuración pública de imágenes no es válida."
+            ) from error
         prefix = values["S3_AVATAR_PREFIX"].strip("/")
         prefix_is_valid = len(prefix) <= 128 and re.fullmatch(
             r"[A-Za-z0-9_-]+(?:/[A-Za-z0-9_-]+)*", prefix
@@ -155,7 +160,10 @@ def _s3_client(settings: S3Settings) -> Any:
 
 def _owned_avatar_key(public_url: str, settings: S3Settings) -> str | None:
     base = urlsplit(settings.public_base_url)
-    candidate = urlsplit(public_url)
+    try:
+        candidate = urlsplit(public_url)
+    except ValueError:
+        return None
     if (
         candidate.scheme != base.scheme
         or candidate.netloc != base.netloc

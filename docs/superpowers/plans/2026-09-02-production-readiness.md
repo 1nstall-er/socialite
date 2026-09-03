@@ -671,7 +671,7 @@ git commit -m "feat: store profile images in s3"
 - Modify: `tests/test_app.py`
 - Create: `migrations/versions/9f8c2f0a64d1_widen_avatar_url.py`
 
-- [ ] **Step 1: Escribir pruebas RED del modelo y ciclo transaccional**
+- [x] **Step 1: Escribir pruebas RED del modelo y ciclo transaccional**
 
 En `tests/test_app.py`, eliminar las aserciones de archivos nuevos en `TemporaryDirectory` y parchear el límite externo `app.upload_image`/`app.delete_image`. Agregar:
 
@@ -745,7 +745,7 @@ def test_profile_deletes_previous_remote_avatar_only_after_commit(self) -> None:
 
 Añadir el caso simétrico de actualización fallida: SQL conserva la URL anterior y `delete_image` recibe únicamente la URL nueva como compensación.
 
-- [ ] **Step 2: Ejecutar y confirmar RED**
+- [x] **Step 2: Ejecutar y confirmar RED**
 
 Run:
 
@@ -755,7 +755,7 @@ Run:
 
 Expected: el validador rechaza la URL HTTPS y `app.upload_image` todavía no existe.
 
-- [ ] **Step 3: Ampliar el modelo sin romper datos legados**
+- [x] **Step 3: Ampliar el modelo sin romper datos legados**
 
 Cambiar `foto_archivo` a `db.String(500)`. El validador debe aceptar exactamente una de dos formas:
 
@@ -777,7 +777,7 @@ if not legacy and not remote:
 
 `foto_url` devuelve directamente el valor HTTPS y conserva `/media/avatares/<nombre>` para el formato legado.
 
-- [ ] **Step 4: Integrar S3 en registro y perfil**
+- [x] **Step 4: Integrar S3 en registro y perfil**
 
 Reemplazar imports por `MediaStorageError`, `delete_image`, `upload_image`. En ambos flujos:
 
@@ -810,7 +810,7 @@ else:
 
 Definir `_delete_image_safely(url)` una sola vez: llama `delete_image`, captura `MediaStorageError` y registra solo una descripción fija más `exc_info=True`. En registro no hay avatar anterior. En perfil no cambiar la referencia anterior hasta que la nueva carga haya terminado.
 
-- [ ] **Step 5: Crear y validar la migración Alembic**
+- [x] **Step 5: Crear y validar la migración Alembic**
 
 Crear `migrations/versions/9f8c2f0a64d1_widen_avatar_url.py` con `down_revision = "25a14c8b7795"` y:
 
@@ -849,7 +849,7 @@ Remove-Item Env:\DATABASE_URL
 
 Expected: las tres operaciones Alembic terminan sin error y solo se elimina la base temporal resuelta.
 
-- [ ] **Step 6: Ejecutar GREEN y regresión**
+- [x] **Step 6: Ejecutar GREEN y regresión**
 
 Run:
 
@@ -861,7 +861,7 @@ Run:
 
 Expected: todas las pruebas pasan; no queda ninguna llamada a `guardar_avatar` o `eliminar_avatar`.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```powershell
 git add app.py models.py tests/test_app.py migrations/versions/9f8c2f0a64d1_widen_avatar_url.py

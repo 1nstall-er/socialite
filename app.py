@@ -3,10 +3,12 @@ import os
 import secrets
 from functools import wraps
 from hmac import compare_digest
+from urllib.parse import urlsplit
 
 from flask import (
     Flask,
     abort,
+    current_app,
     flash,
     g,
     jsonify,
@@ -20,7 +22,7 @@ from flask import (
 from flask_migrate import Migrate
 from jinja2 import TemplateNotFound
 from sqlalchemy import inspect
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 
 from auth import (
     consultar_login,
@@ -39,7 +41,7 @@ from matching import (
     rankear_candidatos_paginado,
     rankear_top_candidatos,
 )
-from media import eliminar_avatar, guardar_avatar
+from media import MediaStorageError, delete_image, upload_image
 from messaging import ErrorMensajeria, crear_mensaje
 from models import (
     Bloqueo,
@@ -122,6 +124,16 @@ DIAS = ("Lunes", "Martes", "Miercoles", "Jueves", "Viernes", "Sabado")
 PASSWORD_MINIMO = 10
 MAXIMO_POR_PAGINA = 48
 migrate = Migrate(compare_type=True, render_as_batch=True)
+
+
+def _delete_image_safely(public_url: str | None) -> None:
+    """Compensa cargas remotas sin ocultar el resultado de la transacción SQL."""
+    if not public_url:
+        return
+    try:
+        delete_image(public_url)
+    except MediaStorageError:
+        current_app.logger.exception("No se pudo eliminar un avatar remoto")
 
 
 def _minutos(hora):
@@ -304,8 +316,13 @@ def create_app(test_config=None):
         respuesta.headers["X-Frame-Options"] = "DENY"
         respuesta.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
         respuesta.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()"
+        media_source = ""
+        public_base_url = str(app.config.get("S3_PUBLIC_BASE_URL") or "")
+        parsed_media = urlsplit(public_base_url)
+        if parsed_media.scheme == "https" and parsed_media.netloc:
+            media_source = f" {parsed_media.scheme}://{parsed_media.netloc}"
         respuesta.headers["Content-Security-Policy"] = (
-            "default-src 'self'; img-src 'self' data:; style-src 'self'; "
+            f"default-src 'self'; img-src 'self' data:{media_source}; style-src 'self'; "
             "script-src 'self' https://cdn.socket.io; "
             "connect-src 'self' ws: wss:; base-uri 'self'; "
             "form-action 'self'; frame-ancestors 'none'"
@@ -556,11 +573,9 @@ def create_app(test_config=None):
             elif Usuario.query.filter_by(correo_institucional=correo).first():
                 flash("Ese correo ya esta registrado.", "error")
             else:
-                foto_archivo = None
+                foto_archivo: str | None = None
                 try:
-                    foto_archivo = guardar_avatar(
-                        foto, app.config["AVATAR_UPLOAD_FOLDER"]
-                    )
+                    foto_archivo = upload_image(foto)
                     usuario = Usuario(
                         nombre=nombre,
                         correo_institucional=correo,
@@ -577,12 +592,23 @@ def create_app(test_config=None):
                     db.session.commit()
                 except ValueError as error:
                     db.session.rollback()
-                    eliminar_avatar(foto_archivo, app.config["AVATAR_UPLOAD_FOLDER"])
+                    _delete_image_safely(foto_archivo)
+                    flash(str(error), "error")
+                except MediaStorageError as error:
+                    db.session.rollback()
                     flash(str(error), "error")
                 except IntegrityError:
                     db.session.rollback()
-                    eliminar_avatar(foto_archivo, app.config["AVATAR_UPLOAD_FOLDER"])
+                    _delete_image_safely(foto_archivo)
                     flash("Ese correo ya está registrado.", "error")
+                except SQLAlchemyError:
+                    db.session.rollback()
+                    _delete_image_safely(foto_archivo)
+                    app.logger.exception("Fallo al confirmar el registro")
+                    flash(
+                        "No pudimos crear tu cuenta. Intenta nuevamente.",
+                        "error",
+                    )
                 else:
                     session.clear()
                     session.permanent = True
@@ -811,9 +837,7 @@ def create_app(test_config=None):
                 g.usuario.nombre = nombre
                 g.usuario.biografia = biografia or None
                 if foto is not None and foto.filename:
-                    foto_nueva = guardar_avatar(
-                        foto, app.config["AVATAR_UPLOAD_FOLDER"]
-                    )
+                    foto_nueva = upload_image(foto)
                     g.usuario.foto_archivo = foto_nueva
                 g.usuario.carrera = carrera or None
                 g.usuario.ciclo = int(ciclo) if ciclo else None
@@ -825,15 +849,24 @@ def create_app(test_config=None):
                     )
                 db.session.commit()
                 if foto_nueva:
-                    eliminar_avatar(
-                        foto_anterior, app.config["AVATAR_UPLOAD_FOLDER"]
-                    )
+                    _delete_image_safely(foto_anterior)
                 flash("Perfil actualizado.", "success")
                 return redirect(url_for("perfil"))
             except ValueError as error:
                 db.session.rollback()
-                eliminar_avatar(foto_nueva, app.config["AVATAR_UPLOAD_FOLDER"])
+                _delete_image_safely(foto_nueva)
                 flash(str(error), "error")
+            except MediaStorageError as error:
+                db.session.rollback()
+                flash(str(error), "error")
+            except SQLAlchemyError:
+                db.session.rollback()
+                _delete_image_safely(foto_nueva)
+                app.logger.exception("Fallo al confirmar la actualización del perfil")
+                flash(
+                    "No pudimos guardar los cambios. Intenta nuevamente.",
+                    "error",
+                )
         return render_template(
             "perfil.html",
             dias=DIAS,

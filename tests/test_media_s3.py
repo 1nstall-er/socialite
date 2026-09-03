@@ -131,6 +131,7 @@ class MediaS3TestCase(unittest.TestCase):
             "https://media.example.com/assets/avatars/../secret.jpg",
             f"https://media.example.com/assets/avatars%2F{token}.jpg",
             f"https://media.example.com/assets/avatars/{token}.jpg?version=1",
+            "https://[",
         )
 
         with self.app.app_context():
@@ -165,6 +166,7 @@ class MediaS3TestCase(unittest.TestCase):
         invalid_settings = (
             {"AWS_S3_BUCKET": ""},
             {"S3_PUBLIC_BASE_URL": "http://media.example.com"},
+            {"S3_PUBLIC_BASE_URL": "https://["},
             {"S3_AVATAR_PREFIX": "avatars/../private"},
         )
         for override in invalid_settings:

@@ -70,6 +70,11 @@ class ProductionConfigTestCase(unittest.TestCase):
         self.assertNotIn(secret_value, str(raised.exception))
         self.assertNotIn("password", str(raised.exception))
 
+    def test_malformed_public_endpoint_is_reported_as_configuration_error(self) -> None:
+        config = {**self.production, "S3_PUBLIC_BASE_URL": "https://["}
+        with self.assertRaisesRegex(RuntimeError, "public_url"):
+            validate_production_config(config)
+
     def test_invalid_integer_environment_value_fails_fast(self) -> None:
         with (
             patch.dict(os.environ, {"MAIL_PORT": "not-an-integer"}, clear=True),
