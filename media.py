@@ -8,6 +8,7 @@ import warnings
 from collections.abc import Mapping
 from dataclasses import dataclass
 from io import BytesIO
+from pathlib import Path
 from typing import Any, Final
 from urllib.parse import quote, unquote, urlsplit
 
@@ -185,9 +186,28 @@ def _owned_avatar_key(public_url: str, settings: S3Settings) -> str | None:
 
 
 def upload_image(archivo: FileStorage | None) -> str:
-    """Normaliza una imagen, la sube a S3 y devuelve su URL pública HTTPS."""
-    settings = S3Settings.from_config(current_app.config)
+    """Normaliza una imagen y devuelve su URL de S3 o su ruta estática local."""
     stream = _normalize_avatar(archivo)
+    try:
+        settings = S3Settings.from_config(current_app.config)
+    except MediaStorageError:
+        required = (
+            "AWS_ACCESS_KEY_ID",
+            "AWS_SECRET_ACCESS_KEY",
+            "AWS_REGION",
+            "AWS_S3_BUCKET",
+            "S3_PUBLIC_BASE_URL",
+            "S3_AVATAR_PREFIX",
+        )
+        if all(str(current_app.config.get(name) or "").strip() for name in required):
+            raise
+        filename = f"{secrets.token_urlsafe(24)}.jpg"
+        upload_dir = Path(current_app.static_folder or "static") / "uploads"
+        upload_dir.mkdir(parents=True, exist_ok=True)
+        (upload_dir / filename).write_bytes(stream.getvalue())
+        static_url = (current_app.static_url_path or "/static").rstrip("/")
+        return f"{static_url}/uploads/{filename}"
+
     key = f"{settings.avatar_prefix}/{secrets.token_urlsafe(24)}.jpg"
     try:
         _s3_client(settings).upload_fileobj(
