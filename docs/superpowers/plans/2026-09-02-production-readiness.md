@@ -1068,7 +1068,7 @@ git commit -m "build: add production deployment stack"
 - Verify: all tracked project files
 - Modify only if verification exposes a defect
 
-- [ ] **Step 1: Ejecutar la puerta completa desde cero**
+- [x] **Step 1: Ejecutar la puerta completa desde cero**
 
 Run:
 
@@ -1084,7 +1084,7 @@ git status --short
 
 Expected: suite completa verde, análisis estático en código 0, compilación en código 0, `git diff --check` sin salida y worktree limpio después de cualquier commit correctivo.
 
-- [ ] **Step 2: Revisar manualmente seguridad y operaciones**
+- [x] **Step 2: Revisar manualmente seguridad y operaciones**
 
 Inspeccionar el diff completo y confirmar:
 
@@ -1099,7 +1099,7 @@ Inspeccionar el diff completo y confirmar:
 
 Si el usuario eligió explícitamente ejecución con subagentes, invocar la revisión independiente indicada por `requesting-code-review` antes de integrar. En ejecución inline, realizar la misma matriz de revisión manual sin crear un subagente.
 
-- [ ] **Step 3: Smoke test local HTTP y Socket.IO**
+- [x] **Step 3: Smoke test local HTTP y Socket.IO**
 
 Arrancar con servicios externos deshabilitados en desarrollo:
 
