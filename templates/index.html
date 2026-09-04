@@ -13,11 +13,11 @@
     </p>
     <div class="acciones">
       {% if g.usuario %}
-        <a class="boton" href="{{ url_for('companeros') }}">Ver mis coincidencias</a>
-        <a class="boton boton-secundario" href="{{ url_for('grupos') }}">Explorar grupos</a>
+        <a class="boton" href="{{ url_for('companions.companeros') }}">Ver mis coincidencias</a>
+        <a class="boton boton-secundario" href="{{ url_for('groups.grupos') }}">Explorar grupos</a>
       {% else %}
-        <a class="boton" href="{{ url_for('registro') }}">Crear mi perfil</a>
-        <a class="boton boton-secundario" href="{{ url_for('grupos') }}">Explorar grupos</a>
+        <a class="boton" href="{{ url_for('auth.registro') }}">Crear mi perfil</a>
+        <a class="boton boton-secundario" href="{{ url_for('groups.grupos') }}">Explorar grupos</a>
       {% endif %}
     </div>
     <div class="prueba-social">

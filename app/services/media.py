@@ -1,4 +1,4 @@
-"""Validación de avatares y almacenamiento privado en AWS S3."""
+"""Avatares en AWS S3 y almacenamiento local de prueba sin nube."""
 
 from __future__ import annotations
 

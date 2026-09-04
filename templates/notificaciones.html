@@ -10,7 +10,7 @@
     <p>Las alertas permanecen aquí aunque hayas estado desconectado.</p>
   </div>
   {% if total_no_leidas %}
-  <form method="post" action="{{ url_for('leer_todas_notificaciones') }}">
+  <form method="post" action="{{ url_for('notifications.leer_todas_notificaciones') }}">
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     <button class="boton boton-secundario" type="submit">Marcar todas como leídas</button>
   </form>
@@ -26,7 +26,7 @@
       {% if notificacion.contenido %}<p>{{ notificacion.contenido }}</p>{% endif %}
       <small>{{ notificacion.creada_en[:16].replace('T', ' ') }}</small>
     </div>
-    <form method="post" action="{{ url_for('leer_notificacion', notificacion_id=notificacion.id) }}">
+    <form method="post" action="{{ url_for('notifications.leer_notificacion', notificacion_id=notificacion.id) }}">
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       <button class="enlace-boton" type="submit">{% if notificacion.leida %}Abrir{% else %}Ver{% endif %}</button>
     </form>

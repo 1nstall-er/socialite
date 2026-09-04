@@ -29,4 +29,4 @@ USER socialite
 EXPOSE 8000
 STOPSIGNAL SIGTERM
 
-CMD ["gunicorn", "--config", "gunicorn.conf.py", "wsgi:application"]
+CMD ["gunicorn", "--config", "gunicorn.conf.py", "run:app"]

@@ -11,11 +11,10 @@ from typing import Final, Self, TypeVar
 from unicodedata import category, normalize
 from urllib.parse import urlsplit
 
-from flask_sqlalchemy import SQLAlchemy
 from sqlalchemy.orm import validates
 from werkzeug.security import check_password_hash, generate_password_hash
 
-db = SQLAlchemy()
+from app.extensions import db
 
 CREDITOS_EXTRAACADEMICOS_REQUERIDOS: Final[int] = 4
 VIERNES_CULTURAL_INICIO: Final[str] = "13:00"

@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Iterable
 from typing import Any
 
-from models import (
+from app.models.entities import (
     CAMPUS_UPC,
     CICLOS_MEDICINA_UPC,
     CICLOS_REGULARES_UPC,
@@ -34,10 +34,7 @@ from models import (
 
 
 def _opciones(tipo_enum: type) -> list[dict[str, str]]:
-    return [
-        {"valor": miembro.value, "etiqueta": miembro.etiqueta}
-        for miembro in tipo_enum
-    ]
+    return [{"valor": miembro.value, "etiqueta": miembro.etiqueta} for miembro in tipo_enum]
 
 
 def curso_contexto(curso: Any) -> dict[str, Any] | None:
@@ -200,9 +197,7 @@ def match_contexto(resultado: dict[str, Any]) -> dict[str, Any]:
         "score": resultado["score"],
         "porcentaje": resultado["porcentaje"],
         "confianza": resultado["confianza"],
-        "probabilidad_emparejamiento": resultado[
-            "probabilidad_emparejamiento"
-        ],
+        "probabilidad_emparejamiento": resultado["probabilidad_emparejamiento"],
         "modelo_probabilidad": resultado["modelo_probabilidad"],
         "cursos": [curso_contexto(curso) for curso in resultado["cursos"]],
         "horas": resultado["horas"],
@@ -285,13 +280,9 @@ def notificacion_contexto(notificacion: Any) -> dict[str, Any]:
         "destino_url": notificacion.destino_url,
         "leida": notificacion.leida,
         "creada_en": notificacion.creada_en.isoformat(),
-        "leida_en": (
-            notificacion.leida_en.isoformat() if notificacion.leida_en else None
-        ),
+        "leida_en": (notificacion.leida_en.isoformat() if notificacion.leida_en else None),
         "actor": (
-            usuario_resumen_contexto(notificacion.actor)
-            if notificacion.actor is not None
-            else None
+            usuario_resumen_contexto(notificacion.actor) if notificacion.actor is not None else None
         ),
     }
 
@@ -322,9 +313,7 @@ def conversacion_contexto(
 def catalogo_upc_contexto(
     espacios: Iterable[EspacioUPC], carreras: Iterable[CarreraUPC]
 ) -> dict[str, Any]:
-    carreras_contexto = [
-        carrera_upc_contexto(carrera) for carrera in carreras
-    ]
+    carreras_contexto = [carrera_upc_contexto(carrera) for carrera in carreras]
     intereses_contexto = [
         {
             "clave": interes.clave,
@@ -397,9 +386,7 @@ def catalogo_upc_contexto(
     }
 
 
-def paginacion_contexto(
-    items: list[Any], pagina: int, por_pagina: int
-) -> dict[str, Any]:
+def paginacion_contexto(items: list[Any], pagina: int, por_pagina: int) -> dict[str, Any]:
     total = len(items)
     paginas = max((total + por_pagina - 1) // por_pagina, 1)
     pagina = max(1, min(pagina, paginas))

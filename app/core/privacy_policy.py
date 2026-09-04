@@ -16,9 +16,10 @@ y no obliga a una migracion para poder revisarlo.
 
 from __future__ import annotations
 
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass, field
-from datetime import date, datetime, timedelta, timezone
-from typing import Any, Callable, Iterable
+from datetime import UTC, date, datetime, timedelta
+from typing import Any
 
 # Version vigente de la politica de privacidad. Al cambiar el texto de la
 # politica se sube esta version: los usuarios con una version anterior
@@ -45,7 +46,7 @@ class EliminacionYaSolicitada(Exception):
 
 def ahora() -> datetime:
     """Instante actual en UTC, consistente con el resto del dominio."""
-    return datetime.now(timezone.utc)
+    return datetime.now(UTC)
 
 
 def requiere_consentimiento(version_aceptada: str | None) -> bool:

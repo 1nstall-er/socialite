@@ -38,6 +38,11 @@ def build_config(instance_path: str | Path) -> dict[str, object]:
         ),
         "SQLALCHEMY_TRACK_MODIFICATIONS": False,
         "CSRF_ENABLED": True,
+        "CORS_ALLOWED_ORIGINS": [
+            origin.strip()
+            for origin in os.getenv("CORS_ALLOWED_ORIGINS", "").split(",")
+            if origin.strip()
+        ],
         "SESSION_COOKIE_HTTPONLY": True,
         "SESSION_COOKIE_SAMESITE": "Lax",
         "SESSION_COOKIE_SECURE": _env_bool(

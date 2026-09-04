@@ -52,6 +52,12 @@ Producción exige:
 `AWS_SESSION_TOKEN` solo se define cuando se usan credenciales temporales.
 Configura `SOCKETIO_ASYNC_MODE=gevent` y `COOKIE_SECURE=1`.
 
+`CORS_ALLOWED_ORIGINS` queda vacío si Jinja2 y la API comparten origen. Para un
+frontend separado, define sus orígenes HTTPS explícitos separados por comas.
+Solo se habilita CORS en `/api/*`; no se admite `*` con cookies. Esto no cambia
+la política de mismo origen de Socket.IO ni desactiva CSRF. Los POST actuales
+siguen requiriendo el campo de formulario `csrf_token`.
+
 ## 4. Construcción
 
 ```bash
@@ -78,7 +84,7 @@ intentar modificar el esquema simultáneamente.
 El comando de producción es:
 
 ```bash
-gunicorn --config gunicorn.conf.py wsgi:application
+gunicorn --config gunicorn.conf.py run:app
 ```
 
 Cada contenedor ejecuta exactamente un
@@ -114,5 +120,6 @@ no existan URLs mayores de 160 caracteres: reducir la columna podría truncar
 datos según el motor SQL.
 
 Los avatares locales existentes continúan disponibles en la ruta autenticada
-`/media/avatares/<nombre>`. Los flujos nuevos nunca escriben ni eliminan
-archivos locales.
+`/media/avatares/<nombre>`. En desarrollo sin credenciales de nube también se
+crean y reemplazan avatares dentro de `instance/avatares/`. Conserva ese directorio
+si pruebas con almacenamiento local; producción sigue requiriendo S3.

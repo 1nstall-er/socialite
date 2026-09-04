@@ -3,7 +3,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from config import DEFAULT_SECRET_KEY, build_config, validate_production_config
+from app.core.config import DEFAULT_SECRET_KEY, build_config, validate_production_config
 
 
 class ProductionConfigTestCase(unittest.TestCase):

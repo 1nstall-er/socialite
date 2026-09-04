@@ -8,12 +8,12 @@ modulo de privacidad recibe las entidades por parametro.
 import os
 import sys
 import unittest
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from privacidad import (
+from app.core.privacy_policy import (
     DIAS_GRACIA_ELIMINACION,
     DIAS_RETENCION_REPORTES,
     VERSION_POLITICA_ACTUAL,
@@ -37,7 +37,7 @@ def usuario_falso():
         biografia="Busco grupo de calculo",
         carrera="Ingenieria de Software",
         ciclo=5,
-        creado_en=datetime(2026, 3, 1, tzinfo=timezone.utc),
+        creado_en=datetime(2026, 3, 1, tzinfo=UTC),
         foto_archivo="ana.jpg",
         password_hash="hash-secreto",
         lista_intereses=["programacion", "futbol"],
@@ -60,21 +60,21 @@ class ConsentimientoTest(unittest.TestCase):
 
 class RetencionTest(unittest.TestCase):
     def test_purga_respeta_periodo_de_gracia(self):
-        solicitado = datetime(2026, 1, 1, tzinfo=timezone.utc)
+        solicitado = datetime(2026, 1, 1, tzinfo=UTC)
         esperado = solicitado + timedelta(days=DIAS_GRACIA_ELIMINACION)
         self.assertEqual(fecha_purga(solicitado), esperado)
 
     def test_no_purga_antes_del_plazo(self):
-        solicitado = datetime.now(timezone.utc)
+        solicitado = datetime.now(UTC)
         self.assertFalse(purga_vencida(solicitado))
 
     def test_purga_cuando_vencio_el_plazo(self):
-        solicitado = datetime.now(timezone.utc) - timedelta(days=DIAS_GRACIA_ELIMINACION + 1)
+        solicitado = datetime.now(UTC) - timedelta(days=DIAS_GRACIA_ELIMINACION + 1)
         self.assertTrue(purga_vencida(solicitado))
 
     def test_reporte_expira_al_ano(self):
-        viejo = datetime.now(timezone.utc) - timedelta(days=DIAS_RETENCION_REPORTES + 1)
-        reciente = datetime.now(timezone.utc) - timedelta(days=10)
+        viejo = datetime.now(UTC) - timedelta(days=DIAS_RETENCION_REPORTES + 1)
+        reciente = datetime.now(UTC) - timedelta(days=10)
         self.assertTrue(reporte_expirado(viejo))
         self.assertFalse(reporte_expirado(reciente))
 
@@ -95,7 +95,7 @@ class ExportacionTest(unittest.TestCase):
         self.assertNotIn("hash-secreto", str(paquete))
 
     def test_solo_exporta_mensajes_propios(self):
-        mensajes = [SimpleNamespace(creado_en=datetime.now(timezone.utc), contenido="hola")]
+        mensajes = [SimpleNamespace(creado_en=datetime.now(UTC), contenido="hola")]
         paquete = exportar_datos_usuario(usuario_falso(), mensajes=mensajes)
         self.assertEqual(len(paquete["mensajes_enviados"]), 1)
         self.assertEqual(paquete["mensajes_enviados"][0]["contenido"], "hola")

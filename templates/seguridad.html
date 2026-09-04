@@ -21,7 +21,7 @@
         </div>
         <div><strong>{{ bloqueo.bloqueado.nombre }}</strong><span>{{ bloqueo.bloqueado.carrera or 'Estudiante UPC' }}</span></div>
       </div>
-      <form method="post" action="{{ url_for('desbloquear_persona', bloqueo_id=bloqueo.id) }}">
+      <form method="post" action="{{ url_for('safety.desbloquear_persona', bloqueo_id=bloqueo.id) }}">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <button class="boton boton-secundario boton-pequeno" type="submit">Desbloquear</button>
       </form>

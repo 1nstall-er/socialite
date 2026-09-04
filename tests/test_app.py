@@ -1,5 +1,6 @@
 import unittest
 from io import BytesIO
+from pathlib import Path
 from tempfile import TemporaryDirectory
 from typing import Any
 from unittest.mock import patch
@@ -9,12 +10,8 @@ from sqlalchemy import event
 from sqlalchemy.exc import SQLAlchemyError
 
 from app import create_app
-from matching import (
-    calcular_afinidad,
-    minutos_compartidos,
-    rankear_candidatos_paginado,
-)
-from models import (
+from app.core.verification import completar_verificacion
+from app.models.entities import (
     Bloqueo,
     CampusUPC,
     CarreraUPC,
@@ -39,7 +36,11 @@ from models import (
     db,
     sincronizar_catalogo_upc,
 )
-from verification import completar_verificacion
+from app.services.matching import (
+    calcular_afinidad,
+    minutos_compartidos,
+    rankear_candidatos_paginado,
+)
 
 
 class FakeS3Client:
@@ -65,7 +66,7 @@ class SocialiteTestCase(unittest.TestCase):
     def setUp(self):
         self.directorio_temporal = TemporaryDirectory()
         self.s3 = FakeS3Client()
-        self.s3_patcher = patch("media.boto3.client", return_value=self.s3)
+        self.s3_patcher = patch("app.services.media.boto3.client", return_value=self.s3)
         self.s3_patcher.start()
         self.addCleanup(self.s3_patcher.stop)
         self.app = create_app(
@@ -230,6 +231,42 @@ class SocialiteTestCase(unittest.TestCase):
             self.assertEqual(avatar.format, "JPEG")
             self.assertEqual(avatar.size, (640, 640))
 
+    def test_foto_local_se_registra_sirve_y_reemplaza_sin_nube(self):
+        self.app.config["AWS_S3_BUCKET"] = ""
+        respuesta = self.registrar()
+        self.assertEqual(respuesta.status_code, 200)
+        self.assertIn("Mi perfil", respuesta.get_data(as_text=True))
+        with self.app.app_context():
+            usuario = Usuario.query.one()
+            anterior = Path(self.directorio_temporal.name) / usuario.foto_archivo
+            url_anterior = usuario.foto_url
+        self.assertTrue(anterior.is_file())
+        with self.client.get(url_anterior) as foto:
+            self.assertEqual(foto.status_code, 200)
+            self.assertEqual(foto.mimetype, "image/jpeg")
+
+        respuesta = self.client.post(
+            "/perfil",
+            data={
+                "nombre": "Ana Actualizada",
+                "carrera": "Ingenieria de Software",
+                "ciclo": "6",
+                "foto": self.foto_prueba(color=(215, 237, 134)),
+            },
+            follow_redirects=True,
+        )
+        self.assertIn("Perfil actualizado", respuesta.get_data(as_text=True))
+        with self.app.app_context():
+            usuario = Usuario.query.one()
+            nuevo = Path(self.directorio_temporal.name) / usuario.foto_archivo
+            url_nueva = usuario.foto_url
+        self.assertNotEqual(anterior, nuevo)
+        self.assertFalse(anterior.exists())
+        self.assertTrue(nuevo.is_file())
+        with self.client.get(url_nueva) as foto:
+            self.assertEqual(foto.status_code, 200)
+        self.assertEqual(self.s3.uploads, [])
+
     def test_perfil_reemplaza_foto_y_elimina_version_anterior(self):
         self.registrar()
         with self.app.app_context():
@@ -290,8 +327,8 @@ class SocialiteTestCase(unittest.TestCase):
     def test_registro_compensa_carga_nueva_si_falla_el_commit(self):
         remoto = "https://media.example.com/avatars/" + "b" * 32 + ".jpg"
         with (
-            patch("app.upload_image", return_value=remoto),
-            patch("app.delete_image") as eliminar,
+            patch("app.controllers.auth.upload_image", return_value=remoto),
+            patch("app.controllers.common.delete_image") as eliminar,
             patch.object(
                 db.session,
                 "commit",
@@ -329,8 +366,8 @@ class SocialiteTestCase(unittest.TestCase):
             eventos.append("delete-old")
 
         with (
-            patch("app.upload_image", side_effect=subir),
-            patch("app.delete_image", side_effect=eliminar),
+            patch("app.controllers.profile.upload_image", side_effect=subir),
+            patch("app.controllers.common.delete_image", side_effect=eliminar),
             patch.object(db.session, "commit", side_effect=confirmar),
         ):
             respuesta = self.client.post(
@@ -354,8 +391,8 @@ class SocialiteTestCase(unittest.TestCase):
 
         reemplazo = "https://media.example.com/avatars/" + "e" * 32 + ".jpg"
         with (
-            patch("app.upload_image", return_value=reemplazo),
-            patch("app.delete_image") as eliminar,
+            patch("app.controllers.profile.upload_image", return_value=reemplazo),
+            patch("app.controllers.common.delete_image") as eliminar,
             patch.object(
                 db.session,
                 "commit",

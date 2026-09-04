@@ -1,8 +1,8 @@
 import unittest
 
-from auth import crear_limitador_login, registrar_login_fallido
-from rate_limit import LimitadorVentanaDeslizante
-from verification import crear_limitador_reenvio, limitar_reenvio
+from app.core.auth import crear_limitador_login, registrar_login_fallido
+from app.core.rate_limit import LimitadorVentanaDeslizante
+from app.core.verification import crear_limitador_reenvio, limitar_reenvio
 
 
 class RateLimitTestCase(unittest.TestCase):

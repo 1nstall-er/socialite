@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from models import Mensaje, Notificacion, TipoNotificacion, Usuario, db
-from queries import contacto_aceptado, hay_bloqueo_entre
+from app.models.entities import Mensaje, Notificacion, TipoNotificacion, Usuario, db
+from app.models.queries import contacto_aceptado, hay_bloqueo_entre
 
 
 @dataclass(frozen=True, slots=True)

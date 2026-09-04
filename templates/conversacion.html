@@ -4,19 +4,19 @@
 
 {% block content %}
 <div class="chat-cabecera">
-  <a class="enlace-volver" href="{{ url_for('mensajes') }}">← Mensajes</a>
+  <a class="enlace-volver" href="{{ url_for('messaging.mensajes') }}">← Mensajes</a>
   <div class="persona-mini">
     <div class="avatar{% if contacto.foto_url %} avatar-con-foto{% endif %}">
       {% if contacto.foto_url %}<img src="{{ contacto.foto_url }}" alt="Foto de {{ contacto.nombre }}">{% else %}{{ contacto.iniciales }}{% endif %}
     </div>
     <div><strong>{{ contacto.nombre }}</strong><span>{{ contacto.carrera or 'Estudiante UPC' }}{% if contacto.ciclo %} · Ciclo {{ contacto.ciclo }}{% endif %}</span></div>
   </div>
-  <a class="enlace-seguridad" href="{{ url_for('seguridad_persona', usuario_id=contacto.id) }}">Seguridad</a>
+  <a class="enlace-seguridad" href="{{ url_for('safety.seguridad_persona', usuario_id=contacto.id) }}">Seguridad</a>
 </div>
 
 <section class="tarjeta chat-panel" data-realtime-chat data-contact-id="{{ contacto.id }}">
   {% if paginacion.hay_anteriores %}
-    <a class="cargar-anteriores" href="{{ url_for('conversacion', usuario_id=contacto.id, antes_de=paginacion.antes_de) }}">Ver mensajes anteriores</a>
+    <a class="cargar-anteriores" href="{{ url_for('messaging.conversacion', usuario_id=contacto.id, antes_de=paginacion.antes_de) }}">Ver mensajes anteriores</a>
   {% endif %}
   <div class="lista-mensajes" aria-live="polite" data-message-list>
     {% for mensaje in mensajes %}
@@ -28,7 +28,7 @@
       <div class="estado-vacio-mini" data-empty-chat>Saluda a {{ contacto.nombre }} y coordinen su primera sesión.</div>
     {% endfor %}
   </div>
-  <form class="compositor-mensaje" method="post" action="{{ url_for('conversacion', usuario_id=contacto.id) }}" data-message-form>
+  <form class="compositor-mensaje" method="post" action="{{ url_for('messaging.conversacion', usuario_id=contacto.id) }}" data-message-form>
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     <label class="sr-only" for="texto">Mensaje</label>
     <textarea id="texto" name="texto" rows="2" maxlength="2000" placeholder="Escribe un mensaje…" required></textarea>

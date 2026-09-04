@@ -2,7 +2,7 @@ import unittest
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 
-from verification import (
+from app.core.verification import (
     MAX_INTENTOS,
     ResultadoVerificacion,
     completar_verificacion,

@@ -12,7 +12,7 @@
   <section class="tarjeta formulario-tarjeta verificacion-tarjeta">
     <h2>Revisa tu correo</h2>
     <p>Enviamos un código de 6 dígitos a <strong>{{ correo }}</strong>. Vence en 15 minutos.</p>
-    <form method="post" action="{{ url_for('verificar_correo') }}">
+    <form method="post" action="{{ url_for('auth.verificar_correo') }}">
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       <div class="campo">
         <label for="codigo">Código de verificación</label>
@@ -21,7 +21,7 @@
       </div>
       <button class="boton boton-ancho" type="submit">Verificar y entrar</button>
     </form>
-    <form class="formulario-reenvio" method="post" action="{{ url_for('reenviar_codigo') }}">
+    <form class="formulario-reenvio" method="post" action="{{ url_for('auth.reenviar_codigo') }}">
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       <button class="enlace-boton" type="submit">Enviar un código nuevo</button>
       {% if segundos_reenvio %}<small>Disponible en aproximadamente {{ segundos_reenvio }} segundos.</small>{% endif %}

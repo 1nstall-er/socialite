@@ -1,5 +1,7 @@
 import unittest
 from io import BytesIO
+from pathlib import Path
+from tempfile import TemporaryDirectory
 from typing import Any
 from unittest.mock import patch
 
@@ -8,7 +10,7 @@ from flask import Flask
 from PIL import Image
 from werkzeug.datastructures import FileStorage
 
-from media import MediaStorageError, delete_image, upload_image
+from app.services.media import MediaStorageError, delete_image, upload_image
 
 
 class FakeS3Client:
@@ -44,8 +46,11 @@ class FakeS3Client:
 
 class MediaS3TestCase(unittest.TestCase):
     def setUp(self) -> None:
+        self.local_uploads = TemporaryDirectory()
+        self.addCleanup(self.local_uploads.cleanup)
         self.app = Flask("media-test")
         self.app.config.update(
+            AVATAR_UPLOAD_FOLDER=self.local_uploads.name,
             AWS_ACCESS_KEY_ID="access-key",
             AWS_SECRET_ACCESS_KEY="secret-key",
             AWS_SESSION_TOKEN="session-token",
@@ -55,7 +60,7 @@ class MediaS3TestCase(unittest.TestCase):
             S3_AVATAR_PREFIX="avatars",
         )
         self.s3 = FakeS3Client()
-        self.boto_client = patch("media.boto3.client", return_value=self.s3)
+        self.boto_client = patch("app.services.media.boto3.client", return_value=self.s3)
         self.boto_client_mock = self.boto_client.start()
         self.addCleanup(self.boto_client.stop)
 
@@ -71,8 +76,9 @@ class MediaS3TestCase(unittest.TestCase):
         return FileStorage(stream=content, filename=f"profile.{image_format.lower()}")
 
     def test_upload_image_normalizes_and_uploads_jpeg_without_filesystem(self) -> None:
-        with self.app.app_context(), patch(
-            "builtins.open", side_effect=AssertionError("filesystem access")
+        with (
+            self.app.app_context(),
+            patch("builtins.open", side_effect=AssertionError("filesystem access")),
         ):
             public_url = upload_image(self.image_file())
 
@@ -82,7 +88,9 @@ class MediaS3TestCase(unittest.TestCase):
             r"^https://media\.example\.com/assets/avatars/[A-Za-z0-9_-]{32}\.jpg$",
         )
         self.assertEqual(upload["bucket"], "socialite-media")
-        self.assertEqual(upload["key"], public_url.removeprefix("https://media.example.com/assets/"))
+        self.assertEqual(
+            upload["key"], public_url.removeprefix("https://media.example.com/assets/")
+        )
         self.assertEqual(
             upload["args"],
             {
@@ -162,9 +170,32 @@ class MediaS3TestCase(unittest.TestCase):
             delete_image(owned)
         self.assertNotIn("provider-secret", str(raised.exception))
 
-    def test_missing_or_insecure_s3_configuration_fails_before_client_creation(self) -> None:
+    def test_missing_cloud_config_uses_local_storage_and_deletion(self) -> None:
+        for bucket in (None, "", "   "):
+            with self.subTest(bucket=bucket), self.app.app_context():
+                self.app.config["AWS_S3_BUCKET"] = bucket
+                filename = upload_image(self.image_file())
+                self.assertRegex(filename, r"^[A-Za-z0-9_-]{32}\.jpg$")
+                path = Path(self.local_uploads.name) / filename
+                with Image.open(path) as avatar:
+                    self.assertEqual(avatar.format, "JPEG")
+                    self.assertEqual(avatar.size, (640, 640))
+                delete_image(filename)
+                self.assertFalse(path.exists())
+                delete_image(filename)
+        self.boto_client_mock.assert_not_called()
+
+    def test_absent_cloud_config_uses_local_storage(self) -> None:
+        for name in list(self.app.config):
+            if name.startswith(("AWS_", "S3_")):
+                del self.app.config[name]
+        with self.app.app_context():
+            filename = upload_image(self.image_file())
+        self.assertTrue((Path(self.local_uploads.name) / filename).is_file())
+        self.boto_client_mock.assert_not_called()
+
+    def test_insecure_s3_configuration_fails_before_client_creation(self) -> None:
         invalid_settings = (
-            {"AWS_S3_BUCKET": ""},
             {"S3_PUBLIC_BASE_URL": "http://media.example.com"},
             {"S3_PUBLIC_BASE_URL": "https://["},
             {"S3_AVATAR_PREFIX": "avatars/../private"},

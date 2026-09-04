@@ -15,7 +15,7 @@
 <body>
 <header class="topbar">
 <div class="contenedor navegacion">
-<a class="marca" href="{{ url_for('index') }}" aria-label="Socialite, inicio">
+<a class="marca" href="{{ url_for('pages.index') }}" aria-label="Socialite, inicio">
 <span class="marca-icono">S</span>
 <span>socialite</span>
 </a>
@@ -23,24 +23,24 @@
 <span class="menu-barras"></span>
 </button>
 <nav id="menu-principal" aria-label="Navegación principal">
-<a href="{{ url_for('grupos') }}">Grupos</a>
+<a href="{{ url_for('groups.grupos') }}">Grupos</a>
 {% if g.usuario %}
-<a href="{{ url_for('companeros') }}">Compañeros</a>
-<a href="{{ url_for('conexiones') }}">Conexiones</a>
-<a href="{{ url_for('mensajes') }}">Mensajes</a>
-<a class="enlace-notificaciones" href="{{ url_for('notificaciones') }}">
+<a href="{{ url_for('companions.companeros') }}">Compañeros</a>
+<a href="{{ url_for('connections.conexiones') }}">Conexiones</a>
+<a href="{{ url_for('messaging.mensajes') }}">Mensajes</a>
+<a class="enlace-notificaciones" href="{{ url_for('notifications.notificaciones') }}">
 Notificaciones
 <span class="contador{% if not notificaciones_no_leidas %} oculto{% endif %}" data-notification-count>{{ notificaciones_no_leidas }}</span>
 </a>
-<a href="{{ url_for('perfil') }}">Mi perfil</a>
-<a href="{{ url_for('seguridad') }}">Seguridad</a>
-<form class="form-inline" method="post" action="{{ url_for('salir') }}">
+<a href="{{ url_for('profile.perfil') }}">Mi perfil</a>
+<a href="{{ url_for('safety.seguridad') }}">Seguridad</a>
+<form class="form-inline" method="post" action="{{ url_for('auth.salir') }}">
 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
 <button class="enlace-boton" type="submit">Salir</button>
 </form>
 {% else %}
-<a href="{{ url_for('ingresar') }}">Ingresar</a>
-<a class="boton boton-pequeno" href="{{ url_for('registro') }}">Crear cuenta</a>
+<a href="{{ url_for('auth.ingresar') }}">Ingresar</a>
+<a class="boton boton-pequeno" href="{{ url_for('auth.registro') }}">Crear cuenta</a>
 {% endif %}
 </nav>
 </div>

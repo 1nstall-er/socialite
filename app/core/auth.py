@@ -2,13 +2,14 @@
 
 from __future__ import annotations
 
+from functools import wraps
 from hmac import compare_digest
 from typing import Any, Final
 
-from flask import current_app, session
+from flask import current_app, flash, g, redirect, request, session, url_for
 
-from models import Usuario, db
-from rate_limit import DecisionLimite, LimitadorVentanaDeslizante
+from app.core.rate_limit import DecisionLimite, LimitadorVentanaDeslizante
+from app.models.entities import Usuario, db
 
 DOMINIOS_PERMITIDOS: Final[tuple[str, ...]] = ("upc.edu.pe",)
 MAX_FALLOS_LOGIN: Final[int] = 3
@@ -55,15 +56,11 @@ def registrar_login_fallido(
     return limitador.consultar(normalizar_clave_ip(direccion_ip), consumir=True)
 
 
-def limpiar_fallos_login(
-    limitador: LimitadorVentanaDeslizante, direccion_ip: str | None
-) -> None:
+def limpiar_fallos_login(limitador: LimitadorVentanaDeslizante, direccion_ip: str | None) -> None:
     limitador.limpiar(normalizar_clave_ip(direccion_ip))
 
 
-def resolver_identidad_socket(
-    auth: Any = None, *, exigir_csrf: bool = False
-) -> Usuario | None:
+def resolver_identidad_socket(auth: Any = None, *, exigir_csrf: bool = False) -> Usuario | None:
     """Resuelve la identidad exclusivamente desde la sesión HTTP firmada."""
     usuario_id = session.get("usuario_id")
     if isinstance(usuario_id, bool) or not isinstance(usuario_id, int):
@@ -85,3 +82,15 @@ def resolver_identidad_socket(
         ):
             return None
     return usuario
+
+
+def login_required(vista):
+
+    @wraps(vista)
+    def protegida(*args, **kwargs):
+        if g.usuario is None:
+            flash("Inicia sesion para continuar.", "info")
+            return redirect(url_for("auth.ingresar", siguiente=request.path))
+        return vista(*args, **kwargs)
+
+    return protegida

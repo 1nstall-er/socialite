@@ -9,7 +9,7 @@ companeros y creen grupos dentro del campus. El MVP esta enfocado en la UPC.
   verificación de un solo uso, caducidad, límite de intentos y reenvío protegido.
 - Foto obligatoria procesada completamente en memoria: valida el contenido,
   corrige la orientación, elimina metadatos, genera un avatar cuadrado y lo
-  almacena cifrado en AWS S3.
+  almacena cifrado en AWS S3, con almacenamiento local de prueba si no hay nube.
 - Ingreso con contrasena almacenada de forma segura.
 - Perfil academico con foto, presentación, carrera, ciclo, cursos, intereses y
   horas disponibles.
@@ -61,21 +61,21 @@ companeros y creen grupos dentro del campus. El MVP esta enfocado en la UPC.
 
 ## Arquitectura de backend
 
-- `app.py`: rutas, validacion, autorizacion y contratos de respuesta.
-- `config.py`: construcción y validación fail-fast del entorno de producción.
-- `matching.py`: afinidad explicable, grafo UPC, BFS y max-heap Top‑K.
-- `queries.py`: planes de carga reutilizables que evitan N+1 y productos
-  cartesianos entre colecciones.
-- `presenters.py`: contratos serializables para Jinja2 y JSON.
-- `models.py`: entidades y relaciones persistentes.
-- `messaging.py`: transacción y autorización compartida por HTTP y WebSocket.
-- `sockets.py`: eventos, salas autenticadas y rate limiting del canal realtime.
-- `media.py`: validación, normalización y almacenamiento privado de avatares.
-- `wsgi.py` y `gunicorn.conf.py`: entrada y proceso WebSocket de producción.
-- `verification.py`: reto criptográfico, expiración, intentos y reenvío.
-- `rate_limit.py`: ventana deslizante acotada y sustituible por Redis.
-- `mailer.py`: entrega transaccional por SMTP, consola local o memoria de prueba.
-- `migrations/`: historial reproducible de cambios de esquema.
+- `app/__init__.py`: Application Factory (`create_app`), sin rutas ni app global.
+- `app/extensions.py`: instancias compartidas de SQLAlchemy, Migrate, SocketIO y CORS.
+- `app/controllers/`: nueve Blueprints HTTP, validación de solicitudes y contratos
+  Jinja2/JSON. `presenters.py` serializa; `contexts.py` compone las vistas.
+- `app/services/`: matching puro, casos de uso de mensajería, correo e imágenes.
+- `app/core/`: configuración, autenticación, verificación, hooks HTTP, sockets,
+  rate limiting y política de privacidad.
+- `app/models/`: entidades sociales, entidades de privacidad y consultas SQL
+  reutilizables sin N+1.
+- `run.py`: único punto de entrada del servidor local y de Gunicorn.
+- `gunicorn.conf.py`: proceso WebSocket de producción.
+- `migrations/`: historial de esquema existente, sin cambios por esta reorganización.
+
+La distribución de responsabilidades, los imports y los pasos de migración están
+documentados en `docs/ARCHITECTURE.md`.
 
 Los contratos que debe consumir el frontend estan documentados en
 `docs/JINJA_CONTEXT.md` y `docs/REALTIME.md`.
@@ -95,15 +95,20 @@ python -m venv .venv
 .\.venv\Scripts\Activate.ps1
 pip install -r requirements.txt
 python -m flask --app app:create_app db upgrade
-python app.py
+python run.py
 ```
 
 La aplicacion queda disponible en `http://127.0.0.1:5000`.
 
 En desarrollo, `MAIL_BACKEND=console` imprime el código de verificación en la
-terminal donde corre Flask. La navegación y los perfiles legados funcionan sin
-servicios externos; registrar una cuenta o cambiar la foto requiere configurar
-un bucket S3 porque el backend ya no escribe imágenes en el disco local.
+terminal donde corre Flask. Sin configuración de S3, las fotos de prueba se guardan
+en `instance/avatares/` y se sirven mediante `/media/avatares/<nombre>`. No hace falta
+contratar almacenamiento para registrar o editar perfiles en local. En producción
+la validación de configuración sigue exigiendo S3.
+
+Desde PowerShell, sin activar el entorno, también puedes arrancar con
+`.\.venv\Scripts\python.exe run.py`. Para crear las cuentas de prueba, ejecuta
+`.\.venv\Scripts\python.exe seed.py` exclusivamente en desarrollo.
 
 Si ya tenías una base creada antes de incorporar Alembic, márcala una sola vez
 con la revisión base y aplica el resto:
@@ -130,7 +135,7 @@ Para validar el tipado estricto del motor puro:
 
 ```powershell
 pip install -r requirements-dev.txt
-python -m mypy matching.py verification.py auth.py rate_limit.py media.py config.py sockets.py --ignore-missing-imports --follow-imports=skip
+python -m mypy app/services/matching.py app/core/verification.py app/core/auth.py app/core/rate_limit.py app/services/media.py app/core/config.py app/core/sockets.py --ignore-missing-imports --follow-imports=skip
 ```
 
 Para ejecutar el análisis estático del proyecto:

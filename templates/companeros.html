@@ -20,10 +20,10 @@
     <h1>Personas con las que harías buen equipo</h1>
     <p>Comparamos señales académicas y sociales. Tú ves cuánto aporta cada una.</p>
   </div>
-  <a class="boton boton-secundario" href="{{ url_for('perfil') }}">Mejorar mi perfil</a>
+  <a class="boton boton-secundario" href="{{ url_for('profile.perfil') }}">Mejorar mi perfil</a>
 </div>
 
-<form class="tarjeta filtros-companeros" method="get" action="{{ url_for('companeros') }}">
+<form class="tarjeta filtros-companeros" method="get" action="{{ url_for('companions.companeros') }}">
   <div class="campo campo-flex">
     <label for="q">Buscar persona, carrera o interés</label>
     <input type="search" id="q" name="q" value="{{ filtros.q }}" placeholder="Ej. software, fotografía…">
@@ -103,28 +103,28 @@
         {% set conexion = conexiones.get(sugerencia.usuario.id) %}
         <div class="acciones-persona">
           {% if not conexion or conexion.estado == 'rechazada' %}
-            <form method="post" action="{{ url_for('solicitar_conexion', usuario_id=sugerencia.usuario.id) }}">
+            <form method="post" action="{{ url_for('connections.solicitar_conexion', usuario_id=sugerencia.usuario.id) }}">
               <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
               <input type="hidden" name="siguiente" value="{{ request.full_path }}">
               <button class="boton boton-ancho" type="submit">{% if conexion %}Volver a conectar{% else %}Quiero conectar{% endif %}</button>
             </form>
           {% elif conexion.estado == 'aceptada' %}
-            <a class="boton boton-secundario boton-ancho" href="{{ url_for('conexiones') }}">✓ Ya están conectados</a>
+            <a class="boton boton-secundario boton-ancho" href="{{ url_for('connections.conexiones') }}">✓ Ya están conectados</a>
           {% elif conexion.destinatario_id == g.usuario.id %}
-            <a class="boton boton-ancho" href="{{ url_for('conexiones') }}">Responder solicitud</a>
+            <a class="boton boton-ancho" href="{{ url_for('connections.conexiones') }}">Responder solicitud</a>
           {% else %}
             <span class="boton boton-desactivado boton-ancho">Solicitud enviada</span>
           {% endif %}
-          <a class="enlace-seguridad" href="{{ url_for('seguridad_persona', usuario_id=sugerencia.usuario.id) }}">Reportar o bloquear</a>
+          <a class="enlace-seguridad" href="{{ url_for('safety.seguridad_persona', usuario_id=sugerencia.usuario.id) }}">Reportar o bloquear</a>
         </div>
       </article>
     {% endfor %}
   </div>
   {% if paginacion.paginas > 1 %}
     <nav class="paginacion" aria-label="Páginas de resultados">
-      {% if paginacion.tiene_anterior %}<a class="boton boton-secundario" href="{{ url_for('companeros', q=filtros.q, curso=filtros.curso or '', afinidad=filtros.afinidad, pagina=paginacion.pagina - 1) }}">← Anterior</a>{% endif %}
+      {% if paginacion.tiene_anterior %}<a class="boton boton-secundario" href="{{ url_for('companions.companeros', q=filtros.q, curso=filtros.curso or '', afinidad=filtros.afinidad, pagina=paginacion.pagina - 1) }}">← Anterior</a>{% endif %}
       <span>Página {{ paginacion.pagina }} de {{ paginacion.paginas }}</span>
-      {% if paginacion.tiene_siguiente %}<a class="boton boton-secundario" href="{{ url_for('companeros', q=filtros.q, curso=filtros.curso or '', afinidad=filtros.afinidad, pagina=paginacion.pagina + 1) }}">Siguiente →</a>{% endif %}
+      {% if paginacion.tiene_siguiente %}<a class="boton boton-secundario" href="{{ url_for('companions.companeros', q=filtros.q, curso=filtros.curso or '', afinidad=filtros.afinidad, pagina=paginacion.pagina + 1) }}">Siguiente →</a>{% endif %}
     </nav>
   {% endif %}
 {% else %}
@@ -132,7 +132,7 @@
     <span>◌</span>
     <h2>Tú eres la primera persona por aquí</h2>
     <p>Cuando se registren más estudiantes, sus coincidencias aparecerán en esta pantalla.</p>
-    <a class="boton boton-secundario" href="{{ url_for('grupos') }}">Explorar grupos</a>
+    <a class="boton boton-secundario" href="{{ url_for('groups.grupos') }}">Explorar grupos</a>
   </div>
 {% endif %}
 {% endblock %}

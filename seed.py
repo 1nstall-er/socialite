@@ -3,8 +3,8 @@
 import random
 
 from app import create_app
-from models import INTERESES_UPC, CampusUPC, CarreraUPC, PerfilUPC, Usuario, db
-from verification import completar_verificacion
+from app.core.verification import completar_verificacion
+from app.models.entities import INTERESES_UPC, CampusUPC, CarreraUPC, PerfilUPC, Usuario, db
 
 
 def main() -> None:

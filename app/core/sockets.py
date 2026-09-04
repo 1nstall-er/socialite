@@ -7,20 +7,20 @@ from functools import wraps
 from typing import Any, Concatenate, ParamSpec, TypeVar
 
 from flask import Flask, current_app, session
-from flask_socketio import SocketIO, disconnect, emit, join_room, leave_room
+from flask_socketio import disconnect, emit, join_room, leave_room
 
-from auth import resolver_identidad_socket
-from messaging import ErrorMensajeria, crear_mensaje
-from models import Usuario, db
-from presenters import mensaje_contexto, notificacion_contexto
-from queries import (
+from app.controllers.presenters import mensaje_contexto, notificacion_contexto
+from app.core.auth import resolver_identidad_socket
+from app.core.rate_limit import LimitadorVentanaDeslizante
+from app.extensions import socketio
+from app.models.entities import Usuario, db
+from app.models.queries import (
     contacto_aceptado,
     marcar_conversacion_leida,
     notificaciones_no_leidas_total,
 )
-from rate_limit import LimitadorVentanaDeslizante
+from app.services.messaging import ErrorMensajeria, crear_mensaje
 
-socketio = SocketIO()
 P = ParamSpec("P")
 R = TypeVar("R")
 

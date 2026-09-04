@@ -14,7 +14,7 @@
     {% set carrera_form = request.form.get('carrera_upc_id', '') %}
     {% set ciclo_form = request.form.get('ciclo', '') %}
     {% set intereses_form = request.form.getlist('intereses') %}
-    <form method="post" action="{{ url_for('registro') }}" enctype="multipart/form-data" data-profile-form>
+    <form method="post" action="{{ url_for('auth.registro') }}" enctype="multipart/form-data" data-profile-form>
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       <div class="campo campo-foto">
         <div class="foto-editor">
@@ -102,7 +102,7 @@
       </div>
       <button class="boton boton-ancho" type="submit">Crear mi cuenta</button>
     </form>
-    <p class="texto-centro texto-suave">¿Ya tienes cuenta? <a href="{{ url_for('ingresar') }}">Ingresa</a></p>
+    <p class="texto-centro texto-suave">¿Ya tienes cuenta? <a href="{{ url_for('auth.ingresar') }}">Ingresa</a></p>
   </section>
 </div>
 {% endblock %}

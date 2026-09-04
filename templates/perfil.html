@@ -26,7 +26,7 @@
     <p class="texto-suave">Estos datos alimentan directamente tu porcentaje de compatibilidad.</p>
     {% set carrera_actual = perfil.perfil_upc.carrera.id if perfil.perfil_upc and perfil.perfil_upc.carrera else none %}
     {% set intereses_seleccionados = perfil.intereses_detalle|map(attribute='clave')|list %}
-    <form method="post" action="{{ url_for('perfil') }}" enctype="multipart/form-data" data-profile-form>
+    <form method="post" action="{{ url_for('profile.perfil') }}" enctype="multipart/form-data" data-profile-form>
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       <div class="campo campo-foto">
         <div class="foto-editor">
@@ -122,7 +122,7 @@
           {% for curso in g.usuario.cursos %}
             <li class="item-lista">
               <div><strong>{{ curso.codigo }}</strong><span>{{ curso.nombre }}</span></div>
-              <form method="post" action="{{ url_for('eliminar_curso', curso_id=curso.id) }}">
+              <form method="post" action="{{ url_for('profile.eliminar_curso', curso_id=curso.id) }}">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                 <button class="boton-icono" type="submit" aria-label="Eliminar {{ curso.codigo }}">×</button>
               </form>
@@ -132,7 +132,7 @@
       {% else %}
         <p class="estado-vacio-mini">Agrega un curso para encontrar compañeros y crear grupos de estudio.</p>
       {% endif %}
-      <form class="formulario-inline" method="post" action="{{ url_for('agregar_curso') }}">
+      <form class="formulario-inline" method="post" action="{{ url_for('profile.agregar_curso') }}">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <div class="campo">
           <label for="codigo">Código</label>
@@ -156,7 +156,7 @@
           {% for horario in g.usuario.horarios %}
             <li class="item-lista">
               <div><strong>{{ horario.dia }}</strong><span>{{ horario.hora_inicio }}–{{ horario.hora_fin }}</span></div>
-              <form method="post" action="{{ url_for('eliminar_horario', horario_id=horario.id) }}">
+              <form method="post" action="{{ url_for('profile.eliminar_horario', horario_id=horario.id) }}">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                 <button class="boton-icono" type="submit" aria-label="Eliminar horario">×</button>
               </form>
@@ -166,7 +166,7 @@
       {% else %}
         <p class="estado-vacio-mini">Indica cuándo estás libre entre clases.</p>
       {% endif %}
-      <form class="formulario-horario" method="post" action="{{ url_for('agregar_horario') }}">
+      <form class="formulario-horario" method="post" action="{{ url_for('profile.agregar_horario') }}">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <div class="campo">
           <label for="dia">Día</label>

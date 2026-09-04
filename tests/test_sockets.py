@@ -4,9 +4,9 @@ from unittest.mock import patch
 from flask import Flask
 
 from app import create_app
-from models import Bloqueo, Conexion, Mensaje, Notificacion, Usuario, db
-from sockets import inicializar_socketio, socketio
-from verification import completar_verificacion
+from app.core.sockets import inicializar_socketio, socketio
+from app.core.verification import completar_verificacion
+from app.models.entities import Bloqueo, Conexion, Mensaje, Notificacion, Usuario, db
 
 
 class SocketSocialiteTestCase(unittest.TestCase):

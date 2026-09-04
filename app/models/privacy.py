@@ -1,6 +1,6 @@
 """Entidades persistentes de cumplimiento de datos personales.
 
-Viven en un modulo aparte de models.py a proposito: el dominio social
+Viven en un modulo aparte de entities.py a proposito: el dominio social
 (usuarios, grupos, mensajes) y la evidencia de cumplimiento cambian por
 razones distintas y las edita gente distinta. Separarlos evita choques
 al trabajar en paralelo.
@@ -10,19 +10,19 @@ Corresponden a la migracion b7d3e91a4c25.
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
-from models import db
-from privacidad import (
+from app.core.privacy_policy import (
     DIAS_GRACIA_ELIMINACION,
     VERSION_POLITICA_ACTUAL,
     fecha_purga,
     purga_vencida,
 )
+from app.models.entities import db
 
 
 def _ahora() -> datetime:
-    return datetime.now(timezone.utc)
+    return datetime.now(UTC)
 
 
 class Consentimiento(db.Model):
@@ -53,7 +53,7 @@ class Consentimiento(db.Model):
     usuario = db.relationship("Usuario", backref="consentimientos")
 
     @classmethod
-    def registrar(cls, usuario_id: int, version: str | None = None) -> "Consentimiento":
+    def registrar(cls, usuario_id: int, version: str | None = None) -> Consentimiento:
         """Registra la aceptacion de la politica vigente (idempotente)."""
         version = version or VERSION_POLITICA_ACTUAL
         existente = cls.query.filter_by(
@@ -114,7 +114,7 @@ class SolicitudEliminacion(db.Model):
         return self.activa and purga_vencida(self.solicitado_en)
 
     @classmethod
-    def abrir(cls, usuario_id: int) -> "SolicitudEliminacion":
+    def abrir(cls, usuario_id: int) -> SolicitudEliminacion:
         """Crea la solicitud calculando la fecha de purga."""
         momento = _ahora()
         solicitud = cls(
@@ -126,7 +126,7 @@ class SolicitudEliminacion(db.Model):
         return solicitud
 
     @classmethod
-    def activa_de(cls, usuario_id: int) -> "SolicitudEliminacion | None":
+    def activa_de(cls, usuario_id: int) -> SolicitudEliminacion | None:
         """Solicitud pendiente del usuario, si existe."""
         return cls.query.filter_by(
             usuario_id=usuario_id, completado_en=None, cancelado_en=None
@@ -166,7 +166,7 @@ class AccesoDatos(db.Model):
     momento = db.Column(db.DateTime(timezone=True), nullable=False, default=_ahora)
 
     @classmethod
-    def anotar(cls, actor_id: int | None, titular_id: int | None, recurso: str) -> "AccesoDatos":
+    def anotar(cls, actor_id: int | None, titular_id: int | None, recurso: str) -> AccesoDatos:
         """Deja constancia de un acceso a datos personales."""
         registro = cls(actor_id=actor_id, titular_id=titular_id, recurso=recurso)
         db.session.add(registro)

@@ -27,8 +27,8 @@
       <article class="fila-conexion">
         {{ identidad(conexion.persona) }}
         <div class="acciones-compactas">
-          <form method="post" action="{{ url_for('aceptar_conexion', conexion_id=conexion.id) }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="boton boton-pequeno" type="submit">Aceptar</button></form>
-          <form method="post" action="{{ url_for('rechazar_conexion', conexion_id=conexion.id) }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="boton boton-secundario boton-pequeno" type="submit">Ahora no</button></form>
+          <form method="post" action="{{ url_for('connections.aceptar_conexion', conexion_id=conexion.id) }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="boton boton-pequeno" type="submit">Aceptar</button></form>
+          <form method="post" action="{{ url_for('connections.rechazar_conexion', conexion_id=conexion.id) }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="boton boton-secundario boton-pequeno" type="submit">Ahora no</button></form>
         </div>
       </article>
     {% else %}<p class="estado-vacio-mini">No tienes solicitudes pendientes.</p>{% endfor %}
@@ -40,9 +40,9 @@
       <article class="fila-conexion">
         {{ identidad(conexion.persona) }}
         <div class="acciones-contacto">
-          <a class="boton boton-pequeno" href="{{ url_for('conversacion', usuario_id=conexion.persona.id) }}">Abrir chat</a>
+          <a class="boton boton-pequeno" href="{{ url_for('messaging.conversacion', usuario_id=conexion.persona.id) }}">Abrir chat</a>
           {% if conexion.persona.correo_institucional %}<a href="mailto:{{ conexion.persona.correo_institucional }}">{{ conexion.persona.correo_institucional }}</a>{% endif %}
-          <a class="enlace-seguridad" href="{{ url_for('seguridad_persona', usuario_id=conexion.persona.id) }}">Reportar o bloquear</a>
+          <a class="enlace-seguridad" href="{{ url_for('safety.seguridad_persona', usuario_id=conexion.persona.id) }}">Reportar o bloquear</a>
         </div>
       </article>
     {% else %}<p class="estado-vacio-mini">Cuando aceptes una conexión aparecerá aquí.</p>{% endfor %}
@@ -54,7 +54,7 @@
     {% for conexion in enviadas %}
       <article class="fila-conexion">
         {{ identidad(conexion.persona) }}
-        <form method="post" action="{{ url_for('cancelar_conexion', conexion_id=conexion.id) }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="boton boton-secundario boton-pequeno" type="submit">Cancelar</button></form>
+        <form method="post" action="{{ url_for('connections.cancelar_conexion', conexion_id=conexion.id) }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="boton boton-secundario boton-pequeno" type="submit">Cancelar</button></form>
       </article>
     {% endfor %}
   </section>

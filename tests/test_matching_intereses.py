@@ -1,7 +1,7 @@
 import unittest
 
-from matching import calcular_afinidad
-from models import INTERESES_UPC, Usuario
+from app.models.entities import INTERESES_UPC, Usuario
+from app.services.matching import calcular_afinidad
 
 
 class InteresesMatchingTestCase(unittest.TestCase):

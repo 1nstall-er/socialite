@@ -9,7 +9,7 @@ from datetime import UTC, datetime, timedelta
 from enum import StrEnum
 from typing import Final, Protocol
 
-from rate_limit import DecisionLimite, LimitadorVentanaDeslizante
+from app.core.rate_limit import DecisionLimite, LimitadorVentanaDeslizante
 
 CODIGO_DIGITOS: Final[int] = 6
 VIGENCIA_MINUTOS: Final[int] = 15

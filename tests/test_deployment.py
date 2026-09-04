@@ -40,7 +40,7 @@ class DeploymentTestCase(unittest.TestCase):
         ):
             runpy.run_path(str(ROOT / "gunicorn.conf.py"))
 
-    def test_wsgi_exports_flask_application_in_fresh_process(self) -> None:
+    def test_run_exports_flask_application_in_fresh_process(self) -> None:
         environment = {
             **os.environ,
             "APP_ENV": "development",
@@ -51,7 +51,7 @@ class DeploymentTestCase(unittest.TestCase):
             [
                 sys.executable,
                 "-c",
-                "from wsgi import application; print(application.name)",
+                "from run import app; print(app.name)",
             ],
             cwd=ROOT,
             env=environment,

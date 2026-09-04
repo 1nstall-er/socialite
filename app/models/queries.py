@@ -5,7 +5,7 @@ from datetime import UTC, datetime
 from sqlalchemy import case, exists, func, or_, select, update
 from sqlalchemy.orm import joinedload, selectinload
 
-from models import (
+from app.models.entities import (
     Bloqueo,
     Conexion,
     Curso,

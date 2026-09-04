@@ -14,7 +14,7 @@
 {% if g.usuario %}
 <details class="tarjeta creador-grupo">
   <summary><span>Crear un grupo</span><span class="circulo-mas">+</span></summary>
-  <form method="post" action="{{ url_for('grupos') }}">
+  <form method="post" action="{{ url_for('groups.grupos') }}">
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     <div class="grid-dos">
       <div class="campo">
@@ -63,7 +63,7 @@
 {% else %}
 <div class="franja-cta">
   <span>¿Quieres crear o unirte a uno?</span>
-  <a class="boton boton-pequeno" href="{{ url_for('ingresar', siguiente=url_for('grupos')) }}">Ingresa a Socialite</a>
+  <a class="boton boton-pequeno" href="{{ url_for('auth.ingresar', siguiente=url_for('groups.grupos')) }}">Ingresa a Socialite</a>
 </div>
 {% endif %}
 
@@ -98,7 +98,7 @@
               {% if grupo.creador_id == g.usuario.id %}
                 <span class="boton boton-desactivado boton-ancho">Eres quien organiza</span>
               {% else %}
-                <form method="post" action="{{ url_for('salir_grupo', grupo_id=grupo.id) }}">
+                <form method="post" action="{{ url_for('groups.salir_grupo', grupo_id=grupo.id) }}">
                   <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                   <button class="boton boton-secundario boton-ancho" type="submit">Salir del grupo</button>
                 </form>
@@ -106,7 +106,7 @@
             {% elif grupo.esta_lleno %}
               <span class="boton boton-desactivado boton-ancho">Grupo completo</span>
             {% else %}
-              <form method="post" action="{{ url_for('unirse_grupo', grupo_id=grupo.id) }}">
+              <form method="post" action="{{ url_for('groups.unirse_grupo', grupo_id=grupo.id) }}">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                 <button class="boton boton-ancho" type="submit">Unirme al grupo</button>
               </form>
