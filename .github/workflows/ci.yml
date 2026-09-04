@@ -1,0 +1,123 @@
+name: CI
+
+# Corre en cada push a main y en cada pull request, para que ningun
+# cambio llegue a main sin pasar pruebas, tipado y analisis estatico.
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  # Si se empuja dos veces seguidas a la misma rama, cancela la corrida
+  # anterior en vez de encolar trabajo que ya quedo obsoleto.
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  pruebas:
+    name: Pruebas unitarias
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Preparar Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Instalar dependencias
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements-dev.txt
+
+      - name: Ejecutar pruebas
+        run: python -m unittest discover -s tests -v
+
+  tipado:
+    name: Tipado estricto
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Preparar Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Instalar dependencias
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements-dev.txt
+
+      - name: Verificar tipado del motor puro
+        run: |
+          python -m mypy \
+            app/services/matching.py \
+            app/core/verification.py \
+            app/core/auth.py \
+            app/core/rate_limit.py \
+            app/services/media.py \
+            app/core/config.py \
+            app/core/sockets.py \
+            --ignore-missing-imports \
+            --follow-imports=skip
+
+  estilo:
+    name: Analisis estatico
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Preparar Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Instalar ruff
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements-dev.txt
+
+      - name: Ejecutar ruff
+        run: python -m ruff check .
+
+  migraciones:
+    name: Migraciones aplicables
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Preparar Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Instalar dependencias
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements-dev.txt
+
+      # Aplica el historial completo sobre una base vacia. Detecta
+      # migraciones rotas y, sobre todo, avisa si dos ramas dejaron el
+      # historial con mas de una cabeza (multiple heads).
+      - name: Aplicar migraciones sobre base limpia
+        env:
+          FLASK_ENV: development
+          MAIL_BACKEND: console
+        run: python -m flask --app app:create_app db upgrade
+
+      - name: Verificar que exista una sola cabeza
+        env:
+          FLASK_ENV: development
+          MAIL_BACKEND: console
+        run: |
+          cabezas=$(python -m flask --app app:create_app db heads | grep -c "(head)" || true)
+          echo "Cabezas encontradas: $cabezas"
+          if [ "$cabezas" -gt 1 ]; then
+            echo "::error::El historial de migraciones tiene mas de una cabeza."
+            exit 1
+          fi
