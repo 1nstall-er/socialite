@@ -96,6 +96,29 @@ def _configured(config: Mapping[str, object], name: str) -> bool:
     return isinstance(value, str) and bool(value.strip())
 
 
+def cors_origin_patterns(origins: object) -> list[re.Pattern[str]]:
+    """Valida orígenes literales y evita que Flask-CORS los trate como patrones."""
+    error = "CORS_ALLOWED_ORIGINS debe ser una lista de orígenes HTTP(S) explícitos."
+    if not isinstance(origins, (list, tuple)):
+        raise ValueError(error)
+    patterns: list[re.Pattern[str]] = []
+    for origin in origins:
+        if not isinstance(origin, str) or not re.fullmatch(
+            r"https?://(?:[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*|\[[0-9A-Fa-f:.]+\])"
+            r"(?::[0-9]{1,5})?",
+            origin,
+        ):
+            raise ValueError(error)
+        try:
+            parsed = urlsplit(origin)
+            if parsed.port == 0:
+                raise ValueError(error)
+        except ValueError as exc:
+            raise ValueError(error) from exc
+        patterns.append(re.compile(r"\A" + re.escape(origin) + r"\Z", re.IGNORECASE))
+    return patterns
+
+
 def validate_production_config(config: Mapping[str, object]) -> None:
     """Falla antes de servir tráfico si producción carece de dependencias."""
     if str(config.get("APP_ENV") or "").lower() != "production":

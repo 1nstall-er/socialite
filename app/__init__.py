@@ -10,7 +10,7 @@ from typing import Any
 from flask import Flask
 from sqlalchemy import inspect
 
-from app.core.config import build_config, validate_production_config
+from app.core.config import build_config, cors_origin_patterns, validate_production_config
 from app.extensions import cors, db, migrate
 
 
@@ -18,6 +18,7 @@ def create_app(test_config: Mapping[str, Any] | None = None) -> Flask:
     root = Path(__file__).resolve().parent.parent
     app = Flask(
         __name__,
+        root_path=str(root),
         instance_path=str(root / "instance"),
         template_folder=str(root / "templates"),
         static_folder=str(root / "static"),
@@ -39,10 +40,8 @@ def create_app(test_config: Mapping[str, Any] | None = None) -> Flask:
     db.init_app(app)
     migrate.init_app(app, db, directory=str(root / "migrations"))
 
-    origins = app.config["CORS_ALLOWED_ORIGINS"]
+    origins = cors_origin_patterns(app.config["CORS_ALLOWED_ORIGINS"])
     if origins:
-        if isinstance(origins, str) or "*" in origins:
-            raise ValueError("CORS_ALLOWED_ORIGINS debe ser una lista de orígenes explícitos.")
         cors.init_app(
             app,
             resources={r"/api/.*": {"origins": origins}},

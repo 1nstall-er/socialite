@@ -1,9 +1,12 @@
 import os
 import runpy
+import sqlite3
 import subprocess
 import sys
 import unittest
+from contextlib import closing
 from pathlib import Path
+from tempfile import TemporaryDirectory
 from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -46,6 +49,10 @@ class DeploymentTestCase(unittest.TestCase):
             "APP_ENV": "development",
             "SOCKETIO_ASYNC_MODE": "threading",
             "SYNC_UPC_CATALOG": "0",
+            "AUTO_CREATE_SCHEMA": "0",
+            "DATABASE_URL": "sqlite:///:memory:",
+            "REDIS_URL": "",
+            "CORS_ALLOWED_ORIGINS": "",
         }
         result = subprocess.run(
             [
@@ -62,6 +69,52 @@ class DeploymentTestCase(unittest.TestCase):
 
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(result.stdout.strip(), "app")
+
+    def test_migrations_and_seed_use_new_package_without_changing_schema(self) -> None:
+        with TemporaryDirectory() as directory:
+            database_path = Path(directory) / "migration-test.db"
+            environment = {
+                **os.environ,
+                "APP_ENV": "development",
+                "SOCKETIO_ASYNC_MODE": "threading",
+                "DATABASE_URL": f"sqlite:///{database_path.as_posix()}",
+                "AUTO_CREATE_SCHEMA": "0",
+                "SYNC_UPC_CATALOG": "0",
+                "REDIS_URL": "",
+                "CORS_ALLOWED_ORIGINS": "",
+            }
+            for action in ("upgrade", "check"):
+                result = subprocess.run(
+                    [sys.executable, "-m", "flask", "--app", "app:create_app", "db", action],
+                    cwd=ROOT,
+                    env=environment,
+                    capture_output=True,
+                    text=True,
+                    timeout=30,
+                )
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+            environment["SYNC_UPC_CATALOG"] = "1"
+            for _ in range(2):
+                result = subprocess.run(
+                    [sys.executable, "seed.py"],
+                    cwd=ROOT,
+                    env=environment,
+                    capture_output=True,
+                    text=True,
+                    timeout=30,
+                )
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            with closing(sqlite3.connect(database_path)) as connection:
+                users = connection.execute(
+                    "SELECT correo_institucional, password_hash, correo_verificado_en FROM usuarios"
+                ).fetchall()
+                self.assertEqual(len(users), 10)
+                self.assertEqual(
+                    {user[0] for user in users},
+                    {f"test{number}@upc.edu.pe" for number in range(1, 11)},
+                )
+                self.assertTrue(all(user[1] != "123456" and user[2] for user in users))
 
     @unittest.skipIf(os.name == "nt", "Gunicorn solo se ejecuta en sistemas Unix")
     def test_websocket_worker_imports_with_runtime_dependencies(self) -> None:

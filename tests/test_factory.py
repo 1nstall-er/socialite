@@ -81,13 +81,51 @@ class FactoryTestCase(unittest.TestCase):
         self.assertEqual(client.post("/salir").status_code, 400)
 
     def test_wildcard_cors_is_rejected(self):
-        for origins in (["*"], "*"):
+        for origins in (
+            ["*"],
+            "*",
+            ["https://.*"],
+            ["https://*.example"],
+            ["https://example.com/path"],
+            ["https://example.com:99999"],
+        ):
             with self.subTest(origins=origins), self.assertRaises(ValueError):
                 self.make_app(CORS_ALLOWED_ORIGINS=origins)
+
+    def test_cors_ipv6_origin_is_matched_exactly(self):
+        origin = "http://[::1]:3000"
+        client = self.make_app(CORS_ALLOWED_ORIGINS=[origin]).test_client()
+        for candidate in (origin, "http://[::1]:30001", "http://[::2]:3000"):
+            response = client.options(
+                "/api/v1/catalogo-upc",
+                headers={
+                    "Origin": candidate,
+                    "Access-Control-Request-Method": "GET",
+                },
+            )
+            self.assertEqual(
+                response.headers.get("Access-Control-Allow-Origin"),
+                origin if candidate == origin else None,
+            )
+
+    def test_relative_avatar_folder_uses_original_project_root(self):
+        app = self.make_app(AVATAR_UPLOAD_FOLDER="static", EMAIL_VERIFICATION_REQUIRED=False)
+        with app.app_context():
+            user = Usuario(nombre="Local", correo_institucional="avatar@upc.edu.pe")
+            user.set_password("test-password")
+            db.session.add(user)
+            db.session.commit()
+            user_id = user.id
+        client = app.test_client()
+        with client.session_transaction() as session:
+            session["usuario_id"] = user_id
+        with client.get("/media/avatares/favicon.svg") as response:
+            self.assertEqual(response.status_code, 200)
 
     def test_root_asset_and_migration_paths_do_not_move(self):
         app = self.make_app()
         root = Path(__file__).resolve().parent.parent
+        self.assertEqual(Path(app.root_path), root)
         self.assertEqual(Path(app.instance_path), root / "instance")
         self.assertEqual(Path(app.static_folder), root / "static")
         self.assertEqual(Path(app.template_folder), root / "templates")
