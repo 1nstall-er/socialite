@@ -19,7 +19,6 @@ from app.controllers.common import (
     _password_valida,
     _resolver_carrera_upc,
 )
-from app.models.privacy import Consentimiento
 from app.controllers.contexts import (
     contexto_catalogo_upc,
 )
@@ -44,6 +43,7 @@ from app.models.entities import (
     db,
     normalizar_intereses_upc,
 )
+from app.models.privacy import Consentimiento
 from app.services.mailer import enviar_codigo_verificacion
 from app.services.media import MediaStorageError, upload_image
 
