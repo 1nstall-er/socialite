@@ -43,6 +43,7 @@ from app.models.entities import (
     db,
     normalizar_intereses_upc,
 )
+from app.models.privacy import Consentimiento
 from app.services.mailer import enviar_codigo_verificacion
 from app.services.media import MediaStorageError, upload_image
 
@@ -136,6 +137,8 @@ def registro():
                 if not current_app.config["EMAIL_VERIFICATION_REQUIRED"]:
                     completar_verificacion(usuario)
                 db.session.add(usuario)
+                db.session.flush()
+                Consentimiento.registrar(usuario.id)
                 db.session.commit()
             except ValueError as error:
                 db.session.rollback()
