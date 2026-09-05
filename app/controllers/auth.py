@@ -19,6 +19,7 @@ from app.controllers.common import (
     _password_valida,
     _resolver_carrera_upc,
 )
+from app.models.privacy import Consentimiento
 from app.controllers.contexts import (
     contexto_catalogo_upc,
 )
@@ -136,6 +137,8 @@ def registro():
                 if not current_app.config["EMAIL_VERIFICATION_REQUIRED"]:
                     completar_verificacion(usuario)
                 db.session.add(usuario)
+                db.session.flush()
+                Consentimiento.registrar(usuario.id)
                 db.session.commit()
             except ValueError as error:
                 db.session.rollback()
