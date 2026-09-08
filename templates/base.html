@@ -1,3 +1,4 @@
+{% from 'components/icons.html' import icon %}
 <!DOCTYPE html>
 <html lang="es">
 <head>
@@ -11,34 +12,40 @@
 <title>{% block title %}Socialite{% endblock %}</title>
 <link rel="icon" href="{{ url_for('static', filename='favicon.svg') }}" type="image/svg+xml">
 <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+<link rel="stylesheet" href="{{ url_for('static', filename='experience.css') }}">
+{% block styles %}{% endblock %}
 </head>
-<body>
+<body class="{% if g.usuario %}app-shell{% else %}public-shell{% endif %}">
+<a class="skip-link" href="#contenido">Saltar al contenido</a>
+{% set navigation = [('pages.panel', 'home', 'Inicio'), ('companions.companeros', 'discover', 'Descubrir'), ('groups.grupos', 'groups', 'Grupos'), ('messaging.mensajes', 'chat', 'Mensajes'), ('profile.perfil', 'user', 'Perfil')] %}
+{% set active = request.endpoint or '' %}
 <header class="topbar">
 <div class="contenedor navegacion">
 <a class="marca" href="{{ url_for('pages.index') }}" aria-label="Socialite, inicio">
-<span class="marca-icono">S</span>
-<span>socialite</span>
+<span class="marca-icono">s.</span>
+<span>socialite<span class="brand-dot">.</span></span>
 </a>
 <button class="menu-boton" type="button" aria-expanded="false" aria-controls="menu-principal" aria-label="Abrir menú">
 <span class="menu-barras"></span>
 </button>
 <nav id="menu-principal" aria-label="Navegación principal">
-<a href="{{ url_for('groups.grupos') }}">Grupos</a>
 {% if g.usuario %}
-<a href="{{ url_for('companions.companeros') }}">Compañeros</a>
-<a href="{{ url_for('connections.conexiones') }}">Conexiones</a>
-<a href="{{ url_for('messaging.mensajes') }}">Mensajes</a>
+<span class="nav-caption">TU ESPACIO</span>
+{% for endpoint, symbol, label in navigation %}<a href="{{ url_for(endpoint) }}" {% if active == endpoint or (endpoint == 'companions.companeros' and active == 'companions.persona') or (endpoint == 'messaging.mensajes' and active == 'messaging.conversacion') %}aria-current="page"{% endif %}>{{ icon(symbol) }}<span>{{ label }}</span></a>{% endfor %}
+<span class="nav-caption secondary-caption">EN COMUNIDAD</span>
+<a href="{{ url_for('connections.conexiones') }}">{{ icon('groups') }} Conexiones</a>
 <a class="enlace-notificaciones" href="{{ url_for('notifications.notificaciones') }}">
-Notificaciones
+{{ icon('bell') }} Notificaciones
 <span class="contador{% if not notificaciones_no_leidas %} oculto{% endif %}" data-notification-count>{{ notificaciones_no_leidas }}</span>
 </a>
-<a href="{{ url_for('profile.perfil') }}">Mi perfil</a>
-<a href="{{ url_for('safety.seguridad') }}">Seguridad</a>
-<form class="form-inline" method="post" action="{{ url_for('auth.salir') }}">
+<a href="{{ url_for('safety.seguridad') }}">{{ icon('shield') }} Seguridad</a>
+<div class="sidebar-note"><span class="eyebrow">De un hola a un plan</span><p>Tu próxima conexión puede estar en tu campus.</p>{{ icon('spark') }}</div>
+<form class="form-inline logout-form" method="post" action="{{ url_for('auth.salir') }}">
 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-<button class="enlace-boton" type="submit">Salir</button>
+<button class="enlace-boton" type="submit">{{ icon('logout') }} Cerrar sesión</button>
 </form>
 {% else %}
+<a href="{{ url_for('groups.grupos') }}">Explorar grupos</a>
 <a href="{{ url_for('auth.ingresar') }}">Ingresar</a>
 <a class="boton boton-pequeno" href="{{ url_for('auth.registro') }}">Crear cuenta</a>
 {% endif %}
@@ -46,7 +53,9 @@ Notificaciones
 </div>
 </header>
 
-<main class="contenedor">
+<div class="workspace">
+{% if g.usuario %}<div class="workspace-top"><span>Tu vida universitaria, <strong>más conectada.</strong></span><a href="{{ url_for('profile.perfil') }}" class="account-link"><span class="account-initials">{{ g.usuario.iniciales }}</span>{{ g.usuario.nombre.split()[0] }}</a></div>{% endif %}
+<main class="contenedor" id="contenido" tabindex="-1">
 {% with mensajes = get_flashed_messages(with_categories=true) %}
 {% if mensajes %}
 <div class="mensajes" aria-live="polite">
@@ -60,10 +69,13 @@ Notificaciones
 </main>
 
 <footer class="pie">
-<div class="contenedor">Hecho para conectar dentro del campus UPC.</div>
+<div class="contenedor"><span>socialite<span class="brand-dot">.</span> <span class="footer-caption">Hecho para encontrarnos.</span></span><span>Comunidad independiente para estudiantes UPC.</span></div>
 </footer>
+</div>
+{% if g.usuario %}<nav class="bottom-nav" aria-label="Navegación móvil">{% for endpoint, symbol, label in navigation %}<a href="{{ url_for(endpoint) }}" {% if active == endpoint or (endpoint == 'companions.companeros' and active == 'companions.persona') or (endpoint == 'messaging.mensajes' and active == 'messaging.conversacion') %}aria-current="page"{% endif %}>{{ icon(symbol) }}<span>{{ label }}</span></a>{% endfor %}</nav>{% endif %}
 
 <script src="{{ url_for('static', filename='app.js') }}" defer></script>
+<script src="{{ url_for('static', filename='interface.js') }}" defer></script>
 {% if g.usuario %}
 <script src="https://cdn.socket.io/4.8.1/socket.io.min.js" integrity="sha384-mkQ3/7FUtcGyoppY6bz/PORYoGqOl7/aSUMn2ymDOJcapfS6PHqxhRTMh1RR0Q6+" crossorigin="anonymous" defer></script>
 <script src="{{ url_for('static', filename='realtime.js') }}" defer></script>

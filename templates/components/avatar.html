@@ -1,0 +1,3 @@
+{% macro avatar(person, large=false) -%}
+<span class="identity-avatar{% if large %} identity-avatar-large{% endif %}" aria-label="{{ person.nombre }}"><span>{{ person.iniciales }}</span>{% if person.foto_url %}<img src="{{ person.foto_url }}" alt="" loading="lazy" data-avatar-image>{% endif %}</span>
+{%- endmacro %}

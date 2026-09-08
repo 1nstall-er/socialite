@@ -1,138 +1,34 @@
 {% extends "base.html" %}
-
-{% block title %}Compañeros — Socialite{% endblock %}
-
+{% block title %}Descubrir — Socialite{% endblock %}
+{% block styles %}<link rel="stylesheet" href="{{ url_for('static', filename='discovery.css') }}">{% endblock %}
 {% block content %}
-{% set nombres_componentes = {
-  'cursos': 'Cursos',
-  'horarios': 'Horarios',
-  'intereses': 'Intereses',
-  'campus': 'Campus',
-  'contexto_academico': 'Área académica',
-  'estilo_objetivo': 'Estilo y objetivo',
-  'vida_universitaria': 'Vida UPC',
-  'metas_curso': 'Metas de curso',
-  'proximidad_grafo': 'Red UPC'
-} %}
-<div class="cabecera-pagina">
-  <div>
-    <span class="eyebrow">Hecho para ti</span>
-    <h1>Personas con las que harías buen equipo</h1>
-    <p>Comparamos señales académicas y sociales. Tú ves cuánto aporta cada una.</p>
-  </div>
-  <a class="boton boton-secundario" href="{{ url_for('profile.perfil') }}">Mejorar mi perfil</a>
-</div>
-
-<form class="tarjeta filtros-companeros" method="get" action="{{ url_for('companions.companeros') }}">
-  <div class="campo campo-flex">
-    <label for="q">Buscar persona, carrera o interés</label>
-    <input type="search" id="q" name="q" value="{{ filtros.q }}" placeholder="Ej. software, fotografía…">
-  </div>
-  <div class="campo">
-    <label for="curso">Curso en común</label>
-    <select id="curso" name="curso">
-      <option value="">Todos los cursos</option>
-      {% for curso in cursos %}<option value="{{ curso.id }}"{% if filtros.curso == curso.id %} selected{% endif %}>{{ curso.codigo }} · {{ curso.nombre }}</option>{% endfor %}
-    </select>
-  </div>
-  <div class="campo">
-    <label for="afinidad">Afinidad mínima</label>
-    <select id="afinidad" name="afinidad">
-      {% for valor in [0, 25, 50, 70, 85] %}<option value="{{ valor }}"{% if filtros.afinidad == valor %} selected{% endif %}>{{ valor }}%{% if valor == 0 %} · cualquiera{% endif %}</option>{% endfor %}
-    </select>
-  </div>
-  <button class="boton" type="submit">Aplicar filtros</button>
-</form>
-
+{% set plan_actual = plan|default('estudio') %}
+{% set nombres_componentes = {'cursos': 'Cursos', 'horarios': 'Horarios', 'intereses': 'Intereses', 'campus': 'Campus', 'contexto_academico': 'Área académica', 'estilo_objetivo': 'Estilo y objetivo', 'vida_universitaria': 'Vida UPC', 'metas_curso': 'Metas de curso', 'proximidad_grafo': 'Red UPC'} %}
+<section class="discovery" data-discovery>
+<header class="discovery-hero"><div><span class="discovery-eyebrow">CONEXIONES CON PROPÓSITO · UPC</span><h1>Tu próximo buen equipo<br>empieza aquí<span>.</span></h1><p>Un curso, una idea o un café. Encuentra con quién dar el siguiente paso.</p></div><a class="discovery-profile-link" href="{{ url_for('profile.perfil') }}">Afinar mi perfil ↗</a></header>
+<div class="discovery-intent"><span class="discovery-eyebrow">¿QUÉ TE PROVOCA HOY?</span><nav class="discovery-plans" aria-label="Tipo de plan">{% for clave, etiqueta, simbolo in [('estudio', 'Estudiar juntos', '↗'), ('proyecto', 'Crear un proyecto', '+'), ('social', 'Conocer gente', '↔')] %}<a href="{{ url_for('companions.companeros', plan=clave, q=filtros.q, curso=filtros.curso or '', afinidad=filtros.afinidad) }}" class="discovery-plan{% if plan_actual == clave %} is-selected{% endif %}" {% if plan_actual == clave %}aria-current="page"{% endif %}><span aria-hidden="true">{{ simbolo }}</span>{{ etiqueta }}</a>{% endfor %}</nav></div>
+<details class="discovery-filters" {% if filtros.q or filtros.curso or filtros.afinidad %}open{% endif %}><summary>Filtrar coincidencias <span aria-hidden="true">+</span></summary><form method="get" action="{{ url_for('companions.companeros') }}"><input type="hidden" name="plan" value="{{ plan_actual }}"><div class="campo"><label for="q">Persona, carrera o interés</label><input type="search" id="q" name="q" value="{{ filtros.q }}" placeholder="Ej. software, fotografía…"></div><div class="campo"><label for="curso">Curso en común</label><select id="curso" name="curso"><option value="">Todos los cursos</option>{% for curso in cursos %}<option value="{{ curso.id }}"{% if filtros.curso == curso.id %} selected{% endif %}>{{ curso.codigo }} · {{ curso.nombre }}</option>{% endfor %}</select></div><div class="campo"><label for="afinidad">Afinidad mínima</label><select id="afinidad" name="afinidad">{% for valor in [0, 25, 50, 70, 85] %}<option value="{{ valor }}"{% if filtros.afinidad == valor %} selected{% endif %}>{{ valor }}%{% if valor == 0 %} · cualquiera{% endif %}</option>{% endfor %}</select></div><button class="boton" type="submit">Aplicar filtros</button></form></details>
 {% if sugerencias %}
-  <div class="resultado-resumen">{{ paginacion.total }} resultado{% if paginacion.total != 1 %}s{% endif %} ordenados por compatibilidad</div>
-  <div class="grid-companeros">
-    {% for sugerencia in sugerencias %}
-      <article class="tarjeta tarjeta-persona">
-        <div class="persona-cabecera">
-          <div class="avatar{% if sugerencia.usuario.foto_url %} avatar-con-foto{% endif %}">
-            {% if sugerencia.usuario.foto_url %}<img src="{{ sugerencia.usuario.foto_url }}" alt="Foto de {{ sugerencia.usuario.nombre }}" loading="lazy">{% else %}{{ sugerencia.usuario.iniciales }}{% endif %}
-          </div>
-          <div>
-            <h2>{{ sugerencia.usuario.nombre }}</h2>
-            <p>{{ sugerencia.usuario.carrera or 'Estudiante UPC' }}{% if sugerencia.usuario.ciclo %} · Ciclo {{ sugerencia.usuario.ciclo }}{% endif %}</p>
-          </div>
-          <div class="afinidad">{{ sugerencia.porcentaje }}<small>%</small><span>afinidad</span></div>
-        </div>
-        {% if sugerencia.usuario.biografia %}<p class="biografia-persona">{{ sugerencia.usuario.biografia }}</p>{% endif %}
-        <progress class="barra-afinidad" value="{{ sugerencia.porcentaje }}" max="100" aria-label="{{ sugerencia.porcentaje }}% de afinidad"></progress>
-        <div class="metricas-match">
-          <div>
-            <span>Probabilidad estimada</span>
-            <strong>{% if sugerencia.probabilidad_emparejamiento is not none %}{{ sugerencia.probabilidad_emparejamiento }}%{% else %}Sin datos{% endif %}</strong>
-          </div>
-          <div>
-            <span>Cobertura del cálculo</span>
-            <strong>{{ sugerencia.confianza }}%</strong>
-          </div>
-        </div>
-        {% if sugerencia.componentes %}
-          <details class="desglose-match">
-            <summary>Ver desglose matemático <span>+</span></summary>
-            <div class="componentes-match">
-              {% for clave, componente in sugerencia.componentes.items() %}
-                <div class="componente-match">
-                  <div><span>{{ nombres_componentes.get(clave, clave|replace('_', ' ')|title) }}</span><strong>{{ componente.porcentaje_similitud }}%</strong></div>
-                  <progress class="barra-componente" value="{{ componente.porcentaje_similitud }}" max="100" aria-label="{{ componente.porcentaje_similitud }}% de similitud en {{ nombres_componentes.get(clave, clave) }}"></progress>
-                  <small>Peso {{ componente.peso_porcentual }}% · aporta {{ componente.contribucion_porcentual }} puntos</small>
-                </div>
-              {% endfor %}
-            </div>
-            <p class="nota-modelo">La probabilidad ajusta la afinidad según la cantidad de datos disponibles; todavía no usa historial de matches.</p>
-          </details>
-        {% endif %}
-        <div class="razones">
-          {% if sugerencia.cursos %}
-            <div><span class="razon-icono">✓</span><p><strong>{{ sugerencia.cursos|length }} curso{% if sugerencia.cursos|length != 1 %}s{% endif %} en común</strong><small>{% for curso in sugerencia.cursos %}{{ curso.codigo }}{% if not loop.last %}, {% endif %}{% endfor %}</small></p></div>
-          {% endif %}
-          {% if sugerencia.horas %}
-            <div><span class="razon-icono">◷</span><p><strong>{{ sugerencia.horas }} h disponibles juntos</strong><small>Coincidencia entre clases</small></p></div>
-          {% endif %}
-          {% if sugerencia.intereses %}
-            <div><span class="razon-icono">#</span><p><strong>Intereses compartidos</strong><small>{{ sugerencia.intereses|join(', ') }}</small></p></div>
-          {% endif %}
-          {% if not sugerencia.cursos and not sugerencia.horas and not sugerencia.intereses %}
-            <p class="texto-suave">Hay pocas señales compartidas. Completen sus perfiles para aumentar la precisión del cálculo.</p>
-          {% endif %}
-        </div>
-        {% set conexion = conexiones.get(sugerencia.usuario.id) %}
-        <div class="acciones-persona">
-          {% if not conexion or conexion.estado == 'rechazada' %}
-            <form method="post" action="{{ url_for('connections.solicitar_conexion', usuario_id=sugerencia.usuario.id) }}">
-              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-              <input type="hidden" name="siguiente" value="{{ request.full_path }}">
-              <button class="boton boton-ancho" type="submit">{% if conexion %}Volver a conectar{% else %}Quiero conectar{% endif %}</button>
-            </form>
-          {% elif conexion.estado == 'aceptada' %}
-            <a class="boton boton-secundario boton-ancho" href="{{ url_for('connections.conexiones') }}">✓ Ya están conectados</a>
-          {% elif conexion.destinatario_id == g.usuario.id %}
-            <a class="boton boton-ancho" href="{{ url_for('connections.conexiones') }}">Responder solicitud</a>
-          {% else %}
-            <span class="boton boton-desactivado boton-ancho">Solicitud enviada</span>
-          {% endif %}
-          <a class="enlace-seguridad" href="{{ url_for('safety.seguridad_persona', usuario_id=sugerencia.usuario.id) }}">Reportar o bloquear</a>
-        </div>
-      </article>
-    {% endfor %}
-  </div>
-  {% if paginacion.paginas > 1 %}
-    <nav class="paginacion" aria-label="Páginas de resultados">
-      {% if paginacion.tiene_anterior %}<a class="boton boton-secundario" href="{{ url_for('companions.companeros', q=filtros.q, curso=filtros.curso or '', afinidad=filtros.afinidad, pagina=paginacion.pagina - 1) }}">← Anterior</a>{% endif %}
-      <span>Página {{ paginacion.pagina }} de {{ paginacion.paginas }}</span>
-      {% if paginacion.tiene_siguiente %}<a class="boton boton-secundario" href="{{ url_for('companions.companeros', q=filtros.q, curso=filtros.curso or '', afinidad=filtros.afinidad, pagina=paginacion.pagina + 1) }}">Siguiente →</a>{% endif %}
-    </nav>
-  {% endif %}
-{% else %}
-  <div class="estado-vacio">
-    <span>◌</span>
-    <h2>Tú eres la primera persona por aquí</h2>
-    <p>Cuando se registren más estudiantes, sus coincidencias aparecerán en esta pantalla.</p>
-    <a class="boton boton-secundario" href="{{ url_for('groups.grupos') }}">Explorar grupos</a>
-  </div>
-{% endif %}
+<div class="discovery-toolbar"><div><h2>Mis coincidencias</h2><p>{{ paginacion.total }} persona{% if paginacion.total != 1 %}s{% endif %} · por compatibilidad contigo</p></div><div class="discovery-switch" data-view-controls hidden aria-label="Vista de coincidencias"><button type="button" data-view="deck" aria-pressed="true">Una a una</button><button type="button" data-view="list" aria-pressed="false">Lista</button></div></div>
+<div class="discovery-cards" data-cards>
+{% for sugerencia in sugerencias %}
+{% set persona = sugerencia.usuario %}
+{% set propuesta = (propuestas|default({})).get(persona.id, {'titulo': 'Hagamos algo juntos', 'descripcion': 'Coordinen un primer encuentro y elijan un plan que les interese.', 'rompehielo': '¡Hola! ¿Te gustaría que coordinemos un plan?'}) %}
+<article class="discovery-card" data-card aria-label="{{ persona.nombre }}"><div class="discovery-identity"><div class="discovery-portrait{% if persona.foto_url %} has-photo{% endif %}">{% if persona.foto_url %}<img src="{{ persona.foto_url }}" alt="Foto de {{ persona.nombre }}" loading="lazy">{% else %}<span class="discovery-monogram" aria-label="Iniciales de {{ persona.nombre }}">{{ persona.iniciales }}</span><span class="discovery-portrait-caption">UNA NUEVA CONEXIÓN<br>UN MUNDO DE POSIBILIDADES</span>{% endif %}<span class="discovery-student">COMUNIDAD UPC</span></div><div class="discovery-person"><span class="discovery-eyebrow">CONOCE A</span><h3>{{ persona.nombre }}</h3><p>{{ persona.carrera or 'Estudiante UPC' }}{% if persona.ciclo %} · Ciclo {{ persona.ciclo }}{% endif %}</p>{% if persona.biografia %}<p class="discovery-bio">{{ persona.biografia }}</p>{% endif %}<a href="{{ url_for('companions.persona', usuario_id=persona.id) }}">Ver perfil completo ↗</a></div></div>
+<div class="discovery-match"><div class="discovery-match-heading"><div><span class="discovery-eyebrow">UN BUEN PUNTO DE PARTIDA</span><h4>Esto los conecta</h4></div><div class="discovery-score"><strong>{{ sugerencia.porcentaje }}<small>%</small></strong><span>afinidad</span></div></div><div class="discovery-reasons">
+{% if sugerencia.cursos %}<div><span aria-hidden="true">↗</span><p><strong>{{ sugerencia.cursos|length }} curso{% if sugerencia.cursos|length != 1 %}s{% endif %} en común</strong><small>{% for curso in sugerencia.cursos %}{{ curso.codigo }}{% if not loop.last %} · {% endif %}{% endfor %}</small></p></div>{% endif %}
+{% if sugerencia.horas %}<div><span aria-hidden="true">◷</span><p><strong>{{ sugerencia.horas }} h disponibles juntos</strong><small>Sus horarios tienen espacio para coincidir.</small></p></div>{% endif %}
+{% if sugerencia.intereses %}<div><span aria-hidden="true">✳</span><p><strong>Intereses compartidos</strong><small>{{ sugerencia.intereses|join(', ') }}</small></p></div>{% endif %}
+{% if not sugerencia.cursos and not sugerencia.horas and not sugerencia.intereses %}<p class="discovery-muted">Aún hay pocas señales compartidas. Completen sus perfiles para conocer mejor sus coincidencias.</p>{% endif %}</div>
+<div class="discovery-proposal"><span class="discovery-eyebrow">SU PRIMER PLAN PODRÍA SER</span><h4>{{ propuesta.titulo }}</h4><p>{{ propuesta.descripcion }}</p></div>
+{% set conexion = conexiones.get(persona.id) %}<div class="discovery-actions">
+{% if not conexion or conexion.estado == 'rechazada' %}<details class="discovery-invite" data-invite><summary class="boton discovery-primary">{% if conexion %}Volver a hacer equipo{% else %}Hagamos equipo{% endif %} <span aria-hidden="true">↗</span></summary><div class="discovery-invite-content" data-invite-content><h4>Invita a {{ persona.nombre }}</h4><p>{{ propuesta.rompehielo }}</p><form method="post" action="{{ url_for('connections.solicitar_conexion', usuario_id=persona.id) }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="siguiente" value="{{ request.full_path }}"><input type="hidden" name="plan" value="{{ plan_actual }}"><input type="hidden" name="plan_tema" value="{{ propuesta.titulo }}"><p class="discovery-muted">Enviarás una solicitud con este plan. Podrán coordinar cuando la acepte.</p><button class="boton discovery-primary" type="submit">Enviar invitación</button></form></div></details>
+{% elif conexion.estado == 'aceptada' %}<a class="boton discovery-primary" href="{{ url_for('connections.conexiones') }}">Ya están conectados ↗</a>{% elif conexion.destinatario_id == g.usuario.id %}<a class="boton discovery-primary" href="{{ url_for('connections.conexiones') }}">Responder solicitud ↗</a>{% else %}<span class="discovery-pending" role="status">✓ Solicitud enviada</span>{% endif %}<a class="discovery-safety" href="{{ url_for('safety.seguridad_persona', usuario_id=persona.id) }}">Reportar o bloquear</a></div>
+<details class="discovery-math"><summary>¿Cómo calculamos la afinidad?</summary><p>La afinidad resume señales compartidas; no garantiza que hagan buen equipo.</p><p>Cobertura del cálculo: {{ sugerencia.confianza }}%. Probabilidad estimada: {% if sugerencia.probabilidad_emparejamiento is not none %}{{ sugerencia.probabilidad_emparejamiento }}%{% else %}sin datos{% endif %}.</p>{% for clave, componente in sugerencia.componentes.items() %}<div><span>{{ nombres_componentes.get(clave, clave|replace('_', ' ')|title) }}</span><strong>{{ componente.porcentaje_similitud }}%</strong><small>Peso {{ componente.peso_porcentual }}% · aporta {{ componente.contribucion_porcentual }} puntos</small></div>{% endfor %}<p>La probabilidad ajusta la afinidad según la cantidad de datos disponibles; todavía no usa historial de matches.</p></details></div></article>
+{% endfor %}</div>
+<div class="discovery-deck-nav" data-deck-controls hidden><button type="button" data-previous aria-label="Ver persona anterior">←</button><p data-card-status role="status" aria-live="polite"></p><button type="button" data-next aria-label="Ver siguiente persona">→</button><small>Explorar no envía solicitudes.</small></div>
+{% if paginacion.paginas > 1 %}<nav class="discovery-pagination" aria-label="Páginas de resultados">{% if paginacion.tiene_anterior %}<a href="{{ url_for('companions.companeros', plan=plan_actual, q=filtros.q, curso=filtros.curso or '', afinidad=filtros.afinidad, pagina=paginacion.pagina - 1) }}">← Página anterior</a>{% endif %}<span>Página {{ paginacion.pagina }} de {{ paginacion.paginas }}</span>{% if paginacion.tiene_siguiente %}<a href="{{ url_for('companions.companeros', plan=plan_actual, q=filtros.q, curso=filtros.curso or '', afinidad=filtros.afinidad, pagina=paginacion.pagina + 1) }}">Más personas →</a>{% endif %}</nav>{% endif %}
+{% else %}<div class="discovery-empty"><span aria-hidden="true">↗</span><h2>{% if filtros.q or filtros.curso or filtros.afinidad %}Probemos con otros filtros{% else %}Tu próximo equipo está por llegar{% endif %}</h2><p>{% if filtros.q or filtros.curso or filtros.afinidad %}No encontramos personas con esta combinación. Amplía tu búsqueda para descubrir más coincidencias.{% else %}Cuando haya estudiantes disponibles, podrás descubrir sus coincidencias aquí. Mientras tanto, encuentra tu comunidad.{% endif %}</p>{% if filtros.q or filtros.curso or filtros.afinidad %}<a class="boton" href="{{ url_for('companions.companeros', plan=plan_actual) }}">Limpiar filtros</a>{% else %}<a class="boton" href="{{ url_for('groups.grupos') }}">Explorar grupos</a>{% endif %}</div>{% endif %}
+</section><dialog class="discovery-dialog" data-invite-dialog aria-labelledby="discovery-dialog-title"><div class="discovery-dialog-top"><span class="discovery-eyebrow" id="discovery-dialog-title">UN PLAN PARA ROMPER EL HIELO</span><button type="button" data-close-dialog aria-label="Cerrar invitación">×</button></div><div data-dialog-body></div><button type="button" class="discovery-dialog-cancel" data-close-dialog>Seguir explorando</button></dialog>
 {% endblock %}
+{% block scripts %}<script src="{{ url_for('static', filename='discovery.js') }}" defer></script>{% endblock %}

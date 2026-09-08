@@ -146,6 +146,8 @@ class EstadoReporte(EnumEtiquetado):
 
 class TipoNotificacion(EnumEtiquetado):
     MENSAJE = ("mensaje", "Mensaje nuevo")
+    INVITACION = ("invitacion", "Invitación recibida")
+    CONEXION = ("conexion", "Conexión aceptada")
 
 
 @dataclass(frozen=True, slots=True)
@@ -970,6 +972,12 @@ class Conexion(db.Model):
     __table_args__ = (
         db.UniqueConstraint("remitente_id", "destinatario_id", name="uq_conexion_directa"),
         db.CheckConstraint("remitente_id != destinatario_id", name="ck_conexion_usuarios_distintos"),
+        db.CheckConstraint(
+            "(plan_tipo IS NULL AND plan_tema IS NULL) OR "
+            "(plan_tipo IS NOT NULL AND plan_tipo IN ('estudio', 'proyecto', 'social') "
+            "AND plan_tema IS NOT NULL AND length(trim(plan_tema)) BETWEEN 1 AND 120)",
+            name="ck_conexion_plan",
+        ),
     )
 
     id = db.Column(db.Integer, primary_key=True)
@@ -980,6 +988,8 @@ class Conexion(db.Model):
         db.Integer, db.ForeignKey("usuarios.id"), nullable=False, index=True
     )
     estado = db.Column(db.String(20), nullable=False, default="pendiente", index=True)
+    plan_tipo = db.Column(db.String(16), nullable=True)
+    plan_tema = db.Column(db.String(120), nullable=True)
     creada_en = db.Column(
         db.DateTime(timezone=True), nullable=False, default=lambda: datetime.now(UTC)
     )

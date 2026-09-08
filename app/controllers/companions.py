@@ -7,6 +7,7 @@ from flask import (
     jsonify,
     redirect,
     render_template,
+    request,
     url_for,
 )
 
@@ -34,6 +35,7 @@ from app.models.queries import (
     conexion_entre,
     hay_bloqueo_entre,
 )
+from app.services.discovery import PLANES, construir_propuesta
 from app.services.matching import (
     calcular_afinidad,
 )
@@ -45,6 +47,9 @@ bp = Blueprint("companions", __name__)
 @login_required
 def companeros():
     contexto = contexto_companeros()
+    plan = request.args.get('plan', 'estudio')
+    if plan not in PLANES:
+        plan = 'estudio'
     return render_template(
         "companeros.html",
         sugerencias=contexto["sugerencias"],
@@ -53,6 +58,9 @@ def companeros():
         filtros=contexto["filtros"],
         cursos=Curso.query.order_by(Curso.codigo).all(),
         contrato=contexto["contrato"],
+        plan=plan,
+        propuestas={item['usuario'].id: construir_propuesta(plan, item)
+                    for item in contexto['sugerencias']},
     )
 
 

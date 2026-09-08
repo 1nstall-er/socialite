@@ -1,0 +1,14 @@
+{% extends 'base.html' %}
+{% from 'components/icons.html' import icon %}
+{% from 'components/avatar.html' import avatar %}
+{% block title %}{{ persona.nombre }} — Socialite{% endblock %}
+{% block content %}
+<a class="text-link back-link" href="{{ url_for('companions.companeros') }}">← Volver a descubrir</a>
+<section class="public-profile tarjeta"><div class="profile-cover"></div><div class="public-profile-body">{{ avatar(persona, true) }}<span class="eyebrow">UN NUEVO PUNTO DE ENCUENTRO</span><h1>{{ persona.nombre }}</h1><p class="subtitulo">{{ persona.carrera or 'Estudiante UPC' }}{% if persona.ciclo %} · Ciclo {{ persona.ciclo }}{% endif %}</p>{% if persona.perfil_upc %}<span class="campus-pill">{{ icon('pin') }} {{ persona.perfil_upc.campus_etiqueta }}</span>{% endif %}<p class="profile-bio">{{ persona.biografia or 'Cada conexión empieza con una conversación.' }}</p><div class="acciones">
+{% if conexion and conexion.estado == 'aceptada' %}<a class="boton" href="{{ url_for('messaging.conversacion', usuario_id=persona.id) }}">{{ icon('chat') }} Abrir chat</a>
+{% elif conexion and conexion.estado == 'pendiente' %}<a class="boton boton-secundario" href="{{ url_for('connections.conexiones') }}">{{ 'Responder solicitud' if conexion.direccion == 'recibida' else 'Ver solicitud enviada' }}</a>
+{% else %}<a class="boton" href="{{ url_for('companions.companeros') }}">{{ icon('discover') }} Elegir un plan para conectar</a>{% endif %}
+<a class="text-link" href="{{ url_for('safety.seguridad_persona', usuario_id=persona.id) }}">{{ icon('shield') }} Reportar o bloquear</a></div>
+{% if persona.correo_institucional %}<p class="texto-suave">Contacto compartido al aceptar la conexión: <a href="mailto:{{ persona.correo_institucional }}">{{ persona.correo_institucional }}</a></p>{% endif %}
+</div></section><div class="profile-detail-grid"><section class="tarjeta"><span class="eyebrow">LO QUE NOS ACERCA</span><h2>Puntos en común</h2><div class="profile-facts"><p><strong>{{ afinidad.cursos|length }}</strong> cursos en común</p><p><strong>{{ afinidad.horas }}</strong> horas compatibles</p><p><strong>{{ afinidad.intereses|length }}</strong> intereses compartidos</p></div>{% if afinidad.cursos %}<div class="interest-tags">{% for curso in afinidad.cursos %}<span>{{ curso.nombre }}</span>{% endfor %}</div>{% endif %}<p class="texto-suave">Estas coincidencias se basan en los datos de sus perfiles.</p></section><section class="tarjeta"><span class="eyebrow">SU MUNDO</span><h2>Intereses y cursos</h2><div class="interest-tags">{% for interes in persona.intereses_detalle %}<span>{{ interes.etiqueta }}</span>{% else %}<p class="texto-suave">Aún no ha agregado intereses.</p>{% endfor %}</div>{% for curso in persona.cursos %}<p class="profile-course">{{ icon('book') }} {{ curso.nombre }}</p>{% endfor %}</section></div>
+{% endblock %}

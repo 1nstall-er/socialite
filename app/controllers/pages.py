@@ -3,7 +3,9 @@ from __future__ import annotations
 from flask import (
     Blueprint,
     g,
+    redirect,
     render_template,
+    url_for,
 )
 
 from app.controllers.common import (
@@ -39,6 +41,8 @@ bp = Blueprint("pages", __name__)
 
 @bp.route("/")
 def index():
+    if g.usuario:
+        return redirect(url_for('pages.panel'))
     return render_template(
         "index.html", total_usuarios=Usuario.query.count(), total_grupos=Grupo.query.count()
     )

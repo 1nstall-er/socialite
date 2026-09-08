@@ -32,6 +32,8 @@ from app.models.queries import (
     marcar_conversacion_leida,
     mensajes_entre,
 )
+from app.services.discovery import construir_propuesta
+from app.services.matching import calcular_afinidad
 from app.services.messaging import ErrorMensajeria, crear_mensaje
 
 bp = Blueprint("messaging", __name__)
@@ -81,6 +83,10 @@ def conversacion(usuario_id):
     if mensajes_marcados or notificaciones_marcadas:
         db.session.commit()
     contrato = {
+        "plan_tema": conexion.plan_tema,
+        "rompehielo": construir_propuesta(
+            conexion.plan_tipo or 'estudio', calcular_afinidad(g.usuario, contacto)
+        )['rompehielo'] if not historial else None,
         "contacto": {
             "id": contacto.id,
             "nombre": contacto.nombre,
@@ -102,6 +108,8 @@ def conversacion(usuario_id):
         contacto=contrato["contacto"],
         mensajes=contrato["mensajes"],
         paginacion=contrato["paginacion"],
+        plan_tema=contrato['plan_tema'],
+        rompehielo=contrato['rompehielo'],
     )
 
 

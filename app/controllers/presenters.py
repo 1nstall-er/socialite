@@ -238,6 +238,8 @@ def conexion_contexto(conexion: Any, usuario_actual: Any) -> dict[str, Any]:
         "id": conexion.id,
         "estado": conexion.estado,
         "direccion": "enviada" if conexion.remitente_id == usuario_actual.id else "recibida",
+        "plan_tipo": conexion.plan_tipo,
+        "plan_tema": conexion.plan_tema,
         "persona": usuario_contexto(otra, incluir_email=conexion.estado == "aceptada"),
         "creada_en": conexion.creada_en.isoformat() if conexion.creada_en else None,
         "actualizada_en": (

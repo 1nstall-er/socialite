@@ -3,8 +3,10 @@ from __future__ import annotations
 from flask import (
     Blueprint,
     abort,
+    current_app,
     flash,
     g,
+    jsonify,
     redirect,
     request,
     url_for,
@@ -16,22 +18,56 @@ from app.controllers.common import (
 )
 from app.controllers.presenters import (
     conexion_contexto,
+    notificacion_contexto,
 )
 from app.core.auth import (
     login_required,
 )
+from app.extensions import socketio
 from app.models.entities import (
     Conexion,
     Usuario,
     db,
 )
 from app.models.queries import (
-    conexion_entre,
     conexiones_de,
-    hay_bloqueo_entre,
+    notificaciones_no_leidas_total,
+)
+from app.services.connections import (
+    ErrorConexion,
+    ResultadoConexion,
+    proponer_conexion,
+    responder_conexion,
 )
 
 bp = Blueprint("connections", __name__)
+
+
+def _json_solicitado():
+    return request.accept_mimetypes.best_match(["text/html", "application/json"]) == "application/json"
+
+
+def _error(error):
+    if _json_solicitado():
+        return jsonify(ok=False, error=str(error), propuesta=error.propuesta), error.estado
+    abort(error.estado, description=str(error))
+
+
+def _respuesta(resultado: ResultadoConexion, siguiente: str, *, aceptar: bool = False):
+    if resultado.notificacion is not None:
+        notification = resultado.notificacion
+        try:
+            payload = notificacion_contexto(notification)
+            payload['total_no_leidas'] = notificaciones_no_leidas_total(notification.usuario_id)
+            socketio.emit('notification_received', payload, to=f'usuario:{notification.usuario_id}')
+        except Exception:
+            current_app.logger.exception('No se pudo emitir la alerta; permanece guardada')
+    if _json_solicitado():
+        return jsonify(
+            ok=True, conexion=conexion_contexto(resultado.conexion, g.usuario),
+            match=aceptar and resultado.cambio, siguiente=siguiente,
+        )
+    return redirect(siguiente)
 
 
 @bp.route("/conexiones")
@@ -60,27 +96,19 @@ def conexiones():
 @login_required
 def solicitar_conexion(usuario_id):
     usuario = db.get_or_404(Usuario, usuario_id)
-    if usuario.id == g.usuario.id:
-        abort(400, description="No puedes conectarte contigo mismo.")
-    if hay_bloqueo_entre(g.usuario.id, usuario.id):
-        abort(403, description="No es posible conectar con esta persona.")
-    conexion = conexion_entre(g.usuario.id, usuario.id)
-    if conexion is None:
-        conexion = Conexion(remitente=g.usuario, destinatario=usuario, estado="pendiente")
-        db.session.add(conexion)
-        db.session.commit()
+    try:
+        resultado = proponer_conexion(
+            g.usuario, usuario, request.form.get("plan"), request.form.get("plan_tema"),
+        )
+    except ErrorConexion as error:
+        return _error(error)
+    if resultado.cambio:
         flash(f"Solicitud enviada a {usuario.nombre}.", "success")
-    elif conexion.estado == "rechazada":
-        conexion.remitente = g.usuario
-        conexion.destinatario = usuario
-        conexion.estado = "pendiente"
-        db.session.commit()
-        flash(f"Nueva solicitud enviada a {usuario.nombre}.", "success")
-    elif conexion.estado == "aceptada":
+    elif resultado.conexion.estado == "aceptada":
         flash("Ya estan conectados.", "info")
     else:
         flash("Ya existe una solicitud pendiente.", "info")
-    return redirect(
+    return _respuesta(resultado,
         _destino_seguro(request.form.get("siguiente"), url_for("companions.companeros"))
     )
 
@@ -89,33 +117,33 @@ def solicitar_conexion(usuario_id):
 @login_required
 def aceptar_conexion(conexion_id):
     conexion = db.get_or_404(Conexion, conexion_id)
-    if conexion.destinatario_id != g.usuario.id or conexion.estado != "pendiente":
-        abort(403)
-    conexion.estado = "aceptada"
-    db.session.commit()
+    try:
+        resultado = responder_conexion(g.usuario, conexion, "aceptar")
+    except ErrorConexion as error:
+        return _error(error)
     flash("Conexion aceptada.", "success")
-    return redirect(url_for("connections.conexiones"))
+    return _respuesta(resultado, url_for("connections.conexiones"), aceptar=True)
 
 
 @bp.post("/conexiones/<int:conexion_id>/rechazar")
 @login_required
 def rechazar_conexion(conexion_id):
     conexion = db.get_or_404(Conexion, conexion_id)
-    if conexion.destinatario_id != g.usuario.id or conexion.estado != "pendiente":
-        abort(403)
-    conexion.estado = "rechazada"
-    db.session.commit()
+    try:
+        resultado = responder_conexion(g.usuario, conexion, "rechazar")
+    except ErrorConexion as error:
+        return _error(error)
     flash("Solicitud descartada.", "info")
-    return redirect(url_for("connections.conexiones"))
+    return _respuesta(resultado, url_for("connections.conexiones"))
 
 
 @bp.post("/conexiones/<int:conexion_id>/cancelar")
 @login_required
 def cancelar_conexion(conexion_id):
     conexion = db.get_or_404(Conexion, conexion_id)
-    if conexion.remitente_id != g.usuario.id or conexion.estado != "pendiente":
-        abort(403)
-    db.session.delete(conexion)
-    db.session.commit()
+    try:
+        resultado = responder_conexion(g.usuario, conexion, "cancelar")
+    except ErrorConexion as error:
+        return _error(error)
     flash("Solicitud cancelada.", "info")
-    return redirect(url_for("connections.conexiones"))
+    return _respuesta(resultado, url_for("connections.conexiones"))

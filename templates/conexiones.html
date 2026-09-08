@@ -21,13 +21,15 @@
 </div>
 
 <div class="layout-conexiones">
+  <p role="alert" data-connection-error></p>
   <section class="tarjeta">
     <div class="titulo-con-contador"><h2>Solicitudes recibidas</h2><span class="contador">{{ recibidas|length }}</span></div>
     {% for conexion in recibidas %}
       <article class="fila-conexion">
         {{ identidad(conexion.persona) }}
+        {% if conexion.plan_tema %}<p class="chat-plan">{{ conexion.plan_tema }}</p>{% endif %}
         <div class="acciones-compactas">
-          <form method="post" action="{{ url_for('connections.aceptar_conexion', conexion_id=conexion.id) }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="boton boton-pequeno" type="submit">Aceptar</button></form>
+          <form method="post" data-accept-connection action="{{ url_for('connections.aceptar_conexion', conexion_id=conexion.id) }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="boton boton-pequeno" type="submit">Me apunto</button></form>
           <form method="post" action="{{ url_for('connections.rechazar_conexion', conexion_id=conexion.id) }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="boton boton-secundario boton-pequeno" type="submit">Ahora no</button></form>
         </div>
       </article>
@@ -39,6 +41,7 @@
     {% for conexion in aceptadas %}
       <article class="fila-conexion">
         {{ identidad(conexion.persona) }}
+        {% if conexion.plan_tema %}<p class="chat-plan">{{ conexion.plan_tema }}</p>{% endif %}
         <div class="acciones-contacto">
           <a class="boton boton-pequeno" href="{{ url_for('messaging.conversacion', usuario_id=conexion.persona.id) }}">Abrir chat</a>
           {% if conexion.persona.correo_institucional %}<a href="mailto:{{ conexion.persona.correo_institucional }}">{{ conexion.persona.correo_institucional }}</a>{% endif %}
@@ -54,10 +57,23 @@
     {% for conexion in enviadas %}
       <article class="fila-conexion">
         {{ identidad(conexion.persona) }}
+        {% if conexion.plan_tema %}<p class="chat-plan">{{ conexion.plan_tema }}</p>{% endif %}
         <form method="post" action="{{ url_for('connections.cancelar_conexion', conexion_id=conexion.id) }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="boton boton-secundario boton-pequeno" type="submit">Cancelar</button></form>
       </article>
     {% endfor %}
   </section>
   {% endif %}
 </div>
+{% endblock %}
+
+{% block scripts %}
+<dialog class="match-dialog" data-match-dialog aria-labelledby="match-title">
+  <span class="eyebrow">Un plan compartido</span>
+  <h2 id="match-title">¡Ya hicieron conexión!</h2>
+  <p>Tú y <strong data-match-name></strong> se apuntaron.</p>
+  <p data-match-plan></p>
+  <a class="boton" data-match-chat>Empezar la conversación</a>
+  <form method="dialog"><button class="boton boton-secundario">Seguir explorando</button></form>
+</dialog>
+<script src="{{ url_for('static', filename='connections-ui.js') }}" defer></script>
 {% endblock %}

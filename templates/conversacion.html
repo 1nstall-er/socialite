@@ -15,6 +15,7 @@
 </div>
 
 <section class="tarjeta chat-panel" data-realtime-chat data-contact-id="{{ contacto.id }}">
+  {% if plan_tema %}<p class="chat-plan"><strong>Su plan</strong> · {{ plan_tema }}</p>{% endif %}
   {% if paginacion.hay_anteriores %}
     <a class="cargar-anteriores" href="{{ url_for('messaging.conversacion', usuario_id=contacto.id, antes_de=paginacion.antes_de) }}">Ver mensajes anteriores</a>
   {% endif %}
@@ -28,6 +29,7 @@
       <div class="estado-vacio-mini" data-empty-chat>Saluda a {{ contacto.nombre }} y coordinen su primera sesión.</div>
     {% endfor %}
   </div>
+  {% if rompehielo %}<div class="chat-starter"><small>Una idea para romper el hielo</small><button class="boton boton-secundario" type="button" data-chat-starter>{{ rompehielo }}</button><small>Se agrega a tu borrador. Tú decides cuándo enviarlo.</small></div>{% endif %}
   <form class="compositor-mensaje" method="post" action="{{ url_for('messaging.conversacion', usuario_id=contacto.id) }}" data-message-form>
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     <label class="sr-only" for="texto">Mensaje</label>
@@ -37,3 +39,5 @@
   <p class="estado-realtime" data-realtime-status role="status">Conectando al chat en tiempo real…</p>
 </section>
 {% endblock %}
+
+{% block scripts %}<script src="{{ url_for('static', filename='connections-ui.js') }}" defer></script>{% endblock %}

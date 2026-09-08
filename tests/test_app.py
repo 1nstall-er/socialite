@@ -562,8 +562,8 @@ class SocialiteTestCase(unittest.TestCase):
         self.assertIn("1.0 h disponibles juntos", pagina)
         self.assertIn("fotografia", pagina)
         self.assertIn("Probabilidad estimada", pagina)
-        self.assertIn("Ver desglose matemático", pagina)
-        self.assertIn("Quiero conectar", pagina)
+        self.assertIn("¿Cómo calculamos la afinidad?", pagina)
+        self.assertIn("Hagamos equipo", pagina)
         self.assertIn("Aplicar filtros", pagina)
 
     def test_matching_fusiona_bloques_y_no_duplica_minutos(self):
@@ -688,7 +688,7 @@ class SocialiteTestCase(unittest.TestCase):
         with self.app.app_context():
             bruno_id = Usuario.query.filter_by(correo_institucional="bruno@upc.edu.pe").one().id
 
-        respuesta = self.client.get(f"/personas/{ana_id}")
+        respuesta = self.client.get(f"/personas/{ana_id}", headers={"Accept": "application/json"})
         self.assertNotIn("correo_institucional", respuesta.get_json()["persona"])
         self.client.post(f"/companeros/{ana_id}/conectar")
         with self.app.app_context():
@@ -700,7 +700,7 @@ class SocialiteTestCase(unittest.TestCase):
             data={"correo": "ana@upc.edu.pe", "password": "segura1234"},
         )
         self.client.post(f"/conexiones/{conexion_id}/aceptar")
-        respuesta = self.client.get(f"/personas/{bruno_id}")
+        respuesta = self.client.get(f"/personas/{bruno_id}", headers={"Accept": "application/json"})
         self.assertEqual(
             respuesta.get_json()["persona"]["correo_institucional"],
             "bruno@upc.edu.pe",
@@ -862,9 +862,8 @@ class SocialiteTestCase(unittest.TestCase):
 
     def test_rutas_sin_template_entregan_contrato_json(self):
         self.registrar()
-        respuesta = self.client.get("/panel")
+        respuesta = self.client.get("/panel", headers={"Accept": "application/json"})
         self.assertEqual(respuesta.status_code, 200)
-        self.assertEqual(respuesta.get_json()["template_pendiente"], "panel.html")
         self.assertIn("metricas", respuesta.get_json())
 
         respuesta = self.client.get("/grupos/nuevo")

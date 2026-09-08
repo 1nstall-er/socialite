@@ -4,6 +4,7 @@ from flask import (
     current_app,
     jsonify,
     render_template,
+    request,
 )
 from jinja2 import TemplateNotFound
 
@@ -105,8 +106,14 @@ def _destino_seguro(valor, predeterminado):
     return predeterminado
 
 
+def quiere_json() -> bool:
+    return request.accept_mimetypes['application/json'] > request.accept_mimetypes['text/html']
+
+
 def renderizar_contrato(template, contrato, **contexto_jinja):
     """Renderiza Jinja si existe; durante la fusion expone el contrato JSON."""
+    if quiere_json():
+        return jsonify(contrato)
     try:
         return render_template(template, **contexto_jinja, contrato=contrato)
     except TemplateNotFound as error:
