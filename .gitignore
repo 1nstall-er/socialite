@@ -217,3 +217,31 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# Archivos de sistema operativo
+# El equipo trabaja en macOS y Windows: sin esto se cuelan archivos
+# basura que ensucian los diffs (ya paso con .DS_Store).
+
+# macOS
+.DS_Store
+.DS_Store?
+.AppleDouble
+.LSOverride
+._*
+.Spotlight-V100
+.Trashes
+
+# Windows
+Thumbs.db
+Thumbs.db:encryptable
+ehthumbs.db
+ehthumbs_vista.db
+desktop.ini
+$RECYCLE.BIN/
+*.lnk
+
+# Linux
+*~
+.fuse_hidden*
+.directory
+.Trash-*
